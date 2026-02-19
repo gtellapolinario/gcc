@@ -96,3 +96,36 @@ def test_audit_logger_redacts_jwt_and_prefixed_api_key(tmp_path: Path) -> None:
 
     event = json.loads(log_path.read_text(encoding="utf-8").strip())
     assert event["request"]["message"].count("[REDACTED]") >= 2
+
+
+def test_audit_logger_truncates_large_fields(tmp_path: Path) -> None:
+    log_path = tmp_path / "audit.jsonl"
+    logger = AuditLogger(log_path=log_path, redact_sensitive=False, max_field_chars=32)
+
+    logger.log_tool_event(
+        tool_name="gcc_context",
+        status="success",
+        request_payload={"message": "x" * 120},
+        response_payload={"status": "success", "details": {"note": "y" * 120}},
+    )
+
+    event = json.loads(log_path.read_text(encoding="utf-8").strip())
+    assert event["request"]["message"].endswith("...[TRUNCATED]")
+    assert len(event["request"]["message"]) == 32
+    assert event["response"]["details"]["note"].endswith("...[TRUNCATED]")
+
+
+def test_audit_logger_truncation_can_be_disabled(tmp_path: Path) -> None:
+    log_path = tmp_path / "audit.jsonl"
+    logger = AuditLogger(log_path=log_path, redact_sensitive=False, max_field_chars=0)
+    message = "z" * 96
+
+    logger.log_tool_event(
+        tool_name="gcc_status",
+        status="success",
+        request_payload={"message": message},
+        response_payload={"status": "success"},
+    )
+
+    event = json.loads(log_path.read_text(encoding="utf-8").strip())
+    assert event["request"]["message"] == message

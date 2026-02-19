@@ -4,8 +4,10 @@ import pytest
 
 from gcc_mcp.runtime import (
     get_runtime_defaults,
+    get_runtime_operations_defaults,
     get_runtime_security_defaults,
     is_loopback_host,
+    validate_runtime_operation_values,
     validate_streamable_http_binding,
 )
 
@@ -98,6 +100,41 @@ def test_runtime_security_defaults_and_bool_parsing() -> None:
 def test_runtime_security_defaults_invalid_bool() -> None:
     with pytest.raises(ValueError):
         get_runtime_security_defaults(env={"GCC_MCP_ALLOW_PUBLIC_HTTP": "sometimes"})
+
+
+def test_runtime_operations_defaults_ok() -> None:
+    rate_limit, max_chars = get_runtime_operations_defaults(
+        env={
+            "GCC_MCP_RATE_LIMIT_PER_MINUTE": "180",
+            "GCC_MCP_AUDIT_MAX_FIELD_CHARS": "2048",
+        }
+    )
+    assert rate_limit == 180
+    assert max_chars == 2048
+
+
+def test_runtime_operations_defaults_zero_disables_truncation() -> None:
+    _, max_chars = get_runtime_operations_defaults(env={"GCC_MCP_AUDIT_MAX_FIELD_CHARS": "0"})
+    assert max_chars == 0
+
+
+def test_runtime_operations_defaults_invalid_values() -> None:
+    with pytest.raises(ValueError):
+        get_runtime_operations_defaults(env={"GCC_MCP_RATE_LIMIT_PER_MINUTE": "-1"})
+    with pytest.raises(ValueError):
+        get_runtime_operations_defaults(env={"GCC_MCP_AUDIT_MAX_FIELD_CHARS": "32"})
+    with pytest.raises(ValueError):
+        get_runtime_operations_defaults(env={"GCC_MCP_RATE_LIMIT_PER_MINUTE": "many"})
+
+
+def test_validate_runtime_operation_values() -> None:
+    validate_runtime_operation_values(rate_limit_per_minute=0, audit_max_field_chars=0)
+    validate_runtime_operation_values(rate_limit_per_minute=0, audit_max_field_chars=64)
+    validate_runtime_operation_values(rate_limit_per_minute=100, audit_max_field_chars=4096)
+    with pytest.raises(ValueError):
+        validate_runtime_operation_values(rate_limit_per_minute=-1, audit_max_field_chars=512)
+    with pytest.raises(ValueError):
+        validate_runtime_operation_values(rate_limit_per_minute=5, audit_max_field_chars=40)
 
 
 @pytest.mark.parametrize(

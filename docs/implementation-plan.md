@@ -85,3 +85,18 @@ Execution items:
 3. Expanded runtime settings validation (`GCC_MCP_ALLOW_PUBLIC_HTTP`, audit settings).
 4. Regression tests for host exposure and audit/runtime edge cases.
 5. Deployment/security docs updates for remote operations.
+
+## v0.5 Operational Guardrails and Limits (in progress)
+
+Tracking:
+
+- Milestone: `GCC MCP v0.5 - Operational Guardrails and Limits`
+- Issue: `#14 v0.5 Operational guardrails execution (rate limits + audit caps)`
+
+Execution items:
+
+1. Optional per-process MCP tool-call rate limiting.
+2. Audit payload field-size truncation for safer log volume bounds.
+3. Runtime parsing/validation for operational control settings.
+4. Regression tests for limiter behavior and runtime/audit edge cases.
+5. Deployment/security docs updates for operational controls.

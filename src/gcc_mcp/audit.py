@@ -33,6 +33,7 @@ class AuditLogger:
 
     log_path: Path | None = None
     redact_sensitive: bool = True
+    max_field_chars: int = 4000
 
     @property
     def enabled(self) -> bool:
@@ -72,9 +73,12 @@ class AuditLogger:
             return
 
     def _normalize_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
-        if not self.redact_sensitive:
-            return payload
-        return _redact_payload(payload)
+        normalized = payload
+        if self.redact_sensitive:
+            normalized = _redact_payload(normalized)
+        if self.max_field_chars > 0:
+            normalized = _truncate_payload(normalized, self.max_field_chars)
+        return normalized
 
 
 def _redact_payload(payload: Any) -> Any:
@@ -113,3 +117,22 @@ def _redact_high_entropy_match(match: re.Match[str]) -> str:
 
 def _is_common_identifier(token: str) -> bool:
     return bool(UUID_PATTERN.fullmatch(token) or SHA1_PATTERN.fullmatch(token))
+
+
+def _truncate_payload(payload: Any, max_chars: int) -> Any:
+    if isinstance(payload, dict):
+        return {key: _truncate_payload(value, max_chars) for key, value in payload.items()}
+    if isinstance(payload, list):
+        return [_truncate_payload(item, max_chars) for item in payload]
+    if isinstance(payload, str):
+        return _truncate_string(payload, max_chars)
+    return payload
+
+
+def _truncate_string(value: str, max_chars: int) -> str:
+    if len(value) <= max_chars:
+        return value
+    suffix = "...[TRUNCATED]"
+    if max_chars <= len(suffix):
+        return suffix[:max_chars]
+    return value[: max_chars - len(suffix)] + suffix

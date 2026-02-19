@@ -13,6 +13,7 @@ from pydantic import Field, ValidationError
 from .audit import AuditLogger
 from .engine import GCCEngine
 from .errors import ErrorCode, GCCError
+from .limits import RateLimiter
 from .models import (
     BranchRequest,
     CommitRequest,
@@ -23,7 +24,9 @@ from .models import (
 )
 from .runtime import (
     get_runtime_defaults,
+    get_runtime_operations_defaults,
     get_runtime_security_defaults,
+    validate_runtime_operation_values,
     validate_streamable_http_binding,
 )
 
@@ -42,6 +45,7 @@ mcp = FastMCP(
 
 engine = GCCEngine()
 audit_logger = AuditLogger()
+rate_limiter = RateLimiter()
 
 READ_ONLY_TOOL_ANNOTATIONS = {
     "readOnlyHint": True,
@@ -111,6 +115,22 @@ def _run_tool(
     operation: Callable[[], dict[str, Any]],
 ) -> dict[str, Any]:
     """Execute tool operation and emit structured audit event."""
+    allowed, retry_after_seconds = rate_limiter.allow()
+    if not allowed:
+        error_payload = GCCError(
+            ErrorCode.RATE_LIMITED,
+            f"Rate limit exceeded for tool '{tool_name}'",
+            "Retry later or increase rate-limit-per-minute.",
+            {"retry_after_seconds": retry_after_seconds},
+        ).to_payload()
+        audit_logger.log_tool_event(
+            tool_name=tool_name,
+            status="error",
+            request_payload=request_payload,
+            response_payload=error_payload,
+        )
+        return error_payload
+
     try:
         response_payload = operation()
         audit_logger.log_tool_event(
@@ -398,6 +418,7 @@ def main() -> None:
             audit_log_path_default,
             audit_redact_default,
         ) = get_runtime_security_defaults()
+        rate_limit_default, audit_max_field_chars_default = get_runtime_operations_defaults()
     except ValueError as exc:
         parser.error(str(exc))
     parser.add_argument(
@@ -437,6 +458,18 @@ def main() -> None:
         default=audit_redact_default,
         help="Redact sensitive-looking fields in audit logs (default: enabled).",
     )
+    parser.add_argument(
+        "--rate-limit-per-minute",
+        type=int,
+        default=rate_limit_default,
+        help="Max MCP tool calls per minute (0 disables limiter).",
+    )
+    parser.add_argument(
+        "--audit-max-field-chars",
+        type=int,
+        default=audit_max_field_chars_default,
+        help="Max characters for each string field written to audit logs.",
+    )
     args = parser.parse_args()
 
     try:
@@ -445,15 +478,22 @@ def main() -> None:
             host=args.host,
             allow_public_http=args.allow_public_http,
         )
+        validate_runtime_operation_values(
+            rate_limit_per_minute=args.rate_limit_per_minute,
+            audit_max_field_chars=args.audit_max_field_chars,
+        )
     except ValueError as exc:
         parser.error(str(exc))
 
     global audit_logger
+    global rate_limiter
     audit_path = str(args.audit_log_file).strip()
     audit_logger = AuditLogger(
         log_path=Path(audit_path) if audit_path else None,
         redact_sensitive=bool(args.audit_redact_sensitive),
+        max_field_chars=int(args.audit_max_field_chars),
     )
+    rate_limiter.configure(int(args.rate_limit_per_minute))
 
     if args.transport == "stdio":
         mcp.run()

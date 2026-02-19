@@ -42,8 +42,13 @@ Primary trust boundaries:
 6. Structured audit logging:
 - Optional JSONL audit logs can record tool invocations (`GCC_MCP_AUDIT_LOG`).
 - Sensitive-looking fields are redacted by default (`GCC_MCP_AUDIT_REDACT=true`).
+- Audit log fields are truncated with configurable limits (`GCC_MCP_AUDIT_MAX_FIELD_CHARS`).
 
-7. CI security scanning:
+7. Operational guardrails:
+- Optional per-process tool-call rate limiting (`GCC_MCP_RATE_LIMIT_PER_MINUTE`).
+- Rate limiting returns explicit `RATE_LIMITED` error payloads with retry hints.
+
+8. CI security scanning:
 - Bandit static analysis runs on Python source.
 - pip-audit checks runtime dependency constraints from `pyproject.toml`.
 

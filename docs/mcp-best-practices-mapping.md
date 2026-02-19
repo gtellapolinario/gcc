@@ -34,6 +34,8 @@ This server implementation follows official MCP guidance from:
    - Non-loopback streamable HTTP bindings require explicit operator opt-in.
 12. Operational auditability:
    - MCP tool calls can be logged in structured JSONL with sensitive-field redaction.
-13. Transport readiness:
+13. Runtime operational controls:
+   - Optional per-process rate limiting and configurable audit field truncation.
+14. Transport readiness:
    - stdio default for local tooling.
    - streamable HTTP mode available behind startup flag.

@@ -124,11 +124,21 @@ Environment variable equivalents:
 - `GCC_MCP_ALLOW_PUBLIC_HTTP` (`true/false`, default `false`)
 - `GCC_MCP_AUDIT_LOG` (optional JSONL audit log file path)
 - `GCC_MCP_AUDIT_REDACT` (`true/false`, default `true`)
+- `GCC_MCP_RATE_LIMIT_PER_MINUTE` (integer, default `0` = disabled)
+- `GCC_MCP_AUDIT_MAX_FIELD_CHARS` (integer, default `4000`; `0` disables truncation)
 
 Optional audit log via CLI flag:
 
 ```bash
 gcc-mcp --audit-log-file .GCC/server-audit.jsonl --audit-redact-sensitive
+```
+
+Optional runtime guardrails:
+
+```bash
+gcc-mcp \
+  --rate-limit-per-minute 120 \
+  --audit-max-field-chars 4096
 ```
 
 ## CI Quality Gates

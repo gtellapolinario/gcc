@@ -44,3 +44,7 @@ This server implementation follows official MCP guidance from:
    - Runtime validation of auth mode/transport combinations and required secrets/endpoints.
 16. Deployment boundary controls:
    - Envoy-oriented reverse-proxy profile documented for remote operation.
+17. Production policy guardrails:
+   - Optional strict security profile enforces authenticated remote mode and auditable operation.
+18. Audit integrity support:
+   - Optional HMAC-signed audit entries with hash-chain metadata for tamper evidence.

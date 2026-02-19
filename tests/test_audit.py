@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
 from pathlib import Path
 
@@ -129,3 +131,83 @@ def test_audit_logger_truncation_can_be_disabled(tmp_path: Path) -> None:
 
     event = json.loads(log_path.read_text(encoding="utf-8").strip())
     assert event["request"]["message"] == message
+
+
+def test_audit_logger_signed_events_include_hash_chain(tmp_path: Path) -> None:
+    log_path = tmp_path / "audit.jsonl"
+    signing_key = "unit-test-signing-key"
+    logger = AuditLogger(
+        log_path=log_path,
+        redact_sensitive=False,
+        signing_key=signing_key,
+    )
+
+    logger.log_tool_event(
+        tool_name="gcc_status",
+        status="success",
+        request_payload={"directory": str(tmp_path)},
+        response_payload={"status": "success"},
+    )
+    logger.log_tool_event(
+        tool_name="gcc_context",
+        status="success",
+        request_payload={"level": "summary"},
+        response_payload={"status": "success"},
+    )
+
+    lines = log_path.read_text(encoding="utf-8").splitlines()
+    first_event = json.loads(lines[0])
+    second_event = json.loads(lines[1])
+
+    assert first_event["prev_event_sha256"] is None
+    assert second_event["prev_event_sha256"] == first_event["event_sha256"]
+
+    for event in (first_event, second_event):
+        canonical_payload = dict(event)
+        expected_event_sha = canonical_payload.pop("event_sha256")
+        expected_signature = canonical_payload.pop("event_signature_hmac_sha256")
+        canonical = json.dumps(canonical_payload, ensure_ascii=True, sort_keys=True).encode("utf-8")
+
+        assert hashlib.sha256(canonical).hexdigest() == expected_event_sha
+        assert (
+            hmac.new(signing_key.encode("utf-8"), canonical, hashlib.sha256).hexdigest()
+            == expected_signature
+        )
+
+
+def test_audit_logger_recovers_previous_hash_from_existing_log(tmp_path: Path) -> None:
+    log_path = tmp_path / "audit.jsonl"
+    previous_hash = "a" * 64
+    log_path.write_text(
+        json.dumps(
+            {
+                "timestamp": "2026-01-01T00:00:00+00:00",
+                "event_type": "mcp_tool_call",
+                "tool_name": "gcc_status",
+                "status": "success",
+                "request": {},
+                "response": {},
+                "prev_event_sha256": None,
+                "event_sha256": previous_hash,
+                "event_signature_hmac_sha256": "b" * 64,
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    logger = AuditLogger(
+        log_path=log_path,
+        redact_sensitive=False,
+        signing_key="unit-test-signing-key",
+    )
+
+    logger.log_tool_event(
+        tool_name="gcc_context",
+        status="success",
+        request_payload={"level": "summary"},
+        response_payload={"status": "success"},
+    )
+
+    last_event = json.loads(log_path.read_text(encoding="utf-8").splitlines()[-1])
+    assert last_event["prev_event_sha256"] == previous_hash

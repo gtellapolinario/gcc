@@ -139,6 +139,14 @@ gcc-mcp --transport streamable-http --auth-mode oauth2 \
   --oauth2-introspection-url https://auth.example.com/oauth2/introspect \
   --oauth2-client-id gcc-mcp \
   --oauth2-client-secret 'replace-me'
+
+# strict production-oriented profile
+gcc-mcp --transport streamable-http \
+  --security-profile strict \
+  --auth-mode token \
+  --auth-token 'replace-me' \
+  --audit-log-file .GCC/server-audit.jsonl \
+  --audit-signing-key 'replace-me'
 ```
 
 Environment variable equivalents:
@@ -149,8 +157,10 @@ Environment variable equivalents:
 - `GCC_MCP_ALLOW_PUBLIC_HTTP` (`true/false`, default `false`)
 - `GCC_MCP_AUDIT_LOG` (optional JSONL audit log file path)
 - `GCC_MCP_AUDIT_REDACT` (`true/false`, default `true`)
+- `GCC_MCP_AUDIT_SIGNING_KEY` (optional key for signed audit events; requires audit log)
 - `GCC_MCP_RATE_LIMIT_PER_MINUTE` (integer, default `0` = disabled)
 - `GCC_MCP_AUDIT_MAX_FIELD_CHARS` (integer, default `4000`; `0` disables truncation)
+- `GCC_MCP_SECURITY_PROFILE` (`baseline` default or `strict`)
 - `GCC_MCP_AUTH_MODE` (`off`, `token`, `trusted-proxy-header`, `oauth2`)
 - `GCC_MCP_AUTH_TOKEN`
 - `GCC_MCP_TRUSTED_PROXY_HEADER`
@@ -165,6 +175,11 @@ Environment variable equivalents:
 
 For production remote deployments, place `gcc-mcp` behind Envoy and enforce TLS, policy,
 and network controls at the proxy layer (`docs/deployment.md`).
+
+When `security-profile` is `strict` and transport is `streamable-http`, `gcc-mcp` enforces:
+- auth mode cannot be `off`
+- audit log must be configured
+- audit signing key must be configured
 
 Optional audit log via CLI flag:
 

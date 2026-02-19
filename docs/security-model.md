@@ -51,12 +51,17 @@ Primary trust boundaries:
 - Optional JSONL audit logs can record tool invocations (`GCC_MCP_AUDIT_LOG`).
 - Sensitive-looking fields are redacted by default (`GCC_MCP_AUDIT_REDACT=true`).
 - Audit log fields are truncated with configurable limits (`GCC_MCP_AUDIT_MAX_FIELD_CHARS`).
+- Optional HMAC signing adds per-event tamper-evident metadata (`GCC_MCP_AUDIT_SIGNING_KEY`).
 
 8. Operational guardrails:
 - Optional per-process tool-call rate limiting (`GCC_MCP_RATE_LIMIT_PER_MINUTE`).
 - Rate limiting returns explicit `RATE_LIMITED` error payloads with retry hints.
 
-9. CI security scanning:
+9. Security profile policy:
+- Runtime security profile supports `baseline` (default) and `strict`.
+- In `strict` with `streamable-http`: auth cannot be `off`, audit log must be enabled, and audit signing key must be configured.
+
+10. CI security scanning:
 - Bandit static analysis runs on Python source.
 - pip-audit checks runtime dependency constraints from `pyproject.toml`.
 
@@ -70,4 +75,4 @@ Primary trust boundaries:
 - Trusted proxy header mode depends on correct reverse-proxy behavior (strip/overwrite header from external clients).
 - OAuth2 introspection availability/latency can affect request authorization outcomes.
 - Redaction is heuristic and should not be treated as formal secret detection.
-- Add optional signed audit trails and stricter policy enforcement for production remote deployments.
+- Signed audits provide tamper evidence but not complete non-repudiation (key management remains critical).

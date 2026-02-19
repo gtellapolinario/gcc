@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -34,6 +36,14 @@ class AuditLogger:
     log_path: Path | None = None
     redact_sensitive: bool = True
     max_field_chars: int = 4000
+    signing_key: str = ""
+    _previous_event_sha256: str | None = field(default=None, init=False, repr=False)
+
+    def __post_init__(self) -> None:
+        """Initialize signer chain state from existing log tail when possible."""
+        if not self.log_path or not self.signing_key:
+            return
+        self._previous_event_sha256 = _read_last_event_hash(self.log_path)
 
     @property
     def enabled(self) -> bool:
@@ -61,6 +71,9 @@ class AuditLogger:
             "request": request_data,
             "response": response_data,
         }
+        event_sha256: str | None = None
+        if self.signing_key:
+            event, event_sha256 = self._sign_event(event)
 
         serialized = json.dumps(event, ensure_ascii=True, sort_keys=True)
         try:
@@ -68,6 +81,8 @@ class AuditLogger:
             with self.log_path.open("a", encoding="utf-8") as handle:
                 handle.write(serialized)
                 handle.write("\n")
+            if event_sha256:
+                self._previous_event_sha256 = event_sha256
         except OSError:
             # Audit logging must never break tool execution flow.
             return
@@ -79,6 +94,22 @@ class AuditLogger:
         if self.max_field_chars > 0:
             normalized = _truncate_payload(normalized, self.max_field_chars)
         return normalized
+
+    def _sign_event(self, event: dict[str, Any]) -> tuple[dict[str, Any], str]:
+        signing_payload = dict(event)
+        signing_payload["prev_event_sha256"] = self._previous_event_sha256
+        canonical = json.dumps(signing_payload, ensure_ascii=True, sort_keys=True)
+        canonical_bytes = canonical.encode("utf-8")
+        event_sha256 = hashlib.sha256(canonical_bytes).hexdigest()
+        signature = hmac.new(
+            self.signing_key.encode("utf-8"),
+            canonical_bytes,
+            hashlib.sha256,
+        ).hexdigest()
+        signed_event = dict(signing_payload)
+        signed_event["event_sha256"] = event_sha256
+        signed_event["event_signature_hmac_sha256"] = signature
+        return signed_event, event_sha256
 
 
 def _redact_payload(payload: Any) -> Any:
@@ -136,3 +167,20 @@ def _truncate_string(value: str, max_chars: int) -> str:
     if max_chars <= len(suffix):
         return suffix[:max_chars]
     return value[: max_chars - len(suffix)] + suffix
+
+
+def _read_last_event_hash(path: Path) -> str | None:
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return None
+    if not lines:
+        return None
+    try:
+        payload = json.loads(lines[-1])
+    except json.JSONDecodeError:
+        return None
+    event_hash = payload.get("event_sha256")
+    if isinstance(event_hash, str) and event_hash:
+        return event_hash
+    return None

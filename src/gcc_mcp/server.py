@@ -31,13 +31,17 @@ from .models import (
 from .runtime import (
     AUTH_MODES,
     RuntimeAuthDefaults,
+    RuntimeSecurityPolicyDefaults,
+    SECURITY_PROFILES,
     get_runtime_defaults,
     get_runtime_auth_defaults,
     get_runtime_operations_defaults,
+    get_runtime_security_policy_defaults,
     parse_csv_values,
     resolve_auth_metadata_urls,
     get_runtime_security_defaults,
     validate_runtime_auth_values,
+    validate_runtime_security_policy_values,
     validate_runtime_operation_values,
     validate_streamable_http_binding,
 )
@@ -495,6 +499,7 @@ def main() -> None:
             audit_log_path_default,
             audit_redact_default,
         ) = get_runtime_security_defaults()
+        security_policy_defaults = get_runtime_security_policy_defaults()
         rate_limit_default, audit_max_field_chars_default = get_runtime_operations_defaults()
         auth_defaults = get_runtime_auth_defaults()
     except ValueError as exc:
@@ -547,6 +552,23 @@ def main() -> None:
         type=int,
         default=audit_max_field_chars_default,
         help="Max characters for each string field written to audit logs.",
+    )
+    parser.add_argument(
+        "--security-profile",
+        choices=sorted(SECURITY_PROFILES),
+        default=security_policy_defaults.security_profile,
+        help=(
+            "Runtime security profile: baseline (default) or strict "
+            "(enforces stronger streamable-http controls)."
+        ),
+    )
+    parser.add_argument(
+        "--audit-signing-key",
+        default=security_policy_defaults.audit_signing_key,
+        help=(
+            "Optional key for HMAC-signed audit events. "
+            "Prefer GCC_MCP_AUDIT_SIGNING_KEY environment variable for secrets."
+        ),
     )
     parser.add_argument(
         "--auth-mode",
@@ -618,6 +640,10 @@ def main() -> None:
         help="Comma-separated required OAuth scopes for streamable HTTP auth.",
     )
     args = parser.parse_args()
+    runtime_policy = RuntimeSecurityPolicyDefaults(
+        security_profile=str(args.security_profile).strip().lower(),
+        audit_signing_key=str(args.audit_signing_key).strip(),
+    )
     runtime_auth = RuntimeAuthDefaults(
         auth_mode=args.auth_mode,
         auth_token=str(args.auth_token).strip(),
@@ -625,7 +651,7 @@ def main() -> None:
         trusted_proxy_value=str(args.trusted_proxy_value).strip(),
         oauth2_introspection_url=str(args.oauth2_introspection_url).strip(),
         oauth2_client_id=str(args.oauth2_client_id).strip(),
-        oauth2_client_secret=args.oauth2_client_secret,
+        oauth2_client_secret=str(args.oauth2_client_secret).strip(),
         oauth2_introspection_timeout_seconds=float(args.oauth2_introspection_timeout_seconds),
         auth_issuer_url=str(args.auth_issuer_url).strip(),
         auth_resource_server_url=str(args.auth_resource_server_url).strip(),
@@ -646,6 +672,13 @@ def main() -> None:
             transport=args.transport,
             auth_defaults=runtime_auth,
         )
+        validate_runtime_security_policy_values(
+            transport=args.transport,
+            auth_mode=runtime_auth.auth_mode,
+            security_profile=runtime_policy.security_profile,
+            audit_log_path=str(args.audit_log_file),
+            audit_signing_key=runtime_policy.audit_signing_key,
+        )
     except ValueError as exc:
         parser.error(str(exc))
 
@@ -656,6 +689,7 @@ def main() -> None:
         log_path=Path(audit_path) if audit_path else None,
         redact_sensitive=bool(args.audit_redact_sensitive),
         max_field_chars=int(args.audit_max_field_chars),
+        signing_key=runtime_policy.audit_signing_key,
     )
     rate_limiter.configure(int(args.rate_limit_per_minute))
     _configure_fastmcp_auth(

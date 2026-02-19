@@ -4,15 +4,18 @@ import pytest
 
 from gcc_mcp.runtime import (
     RuntimeAuthDefaults,
+    RuntimeSecurityPolicyDefaults,
     build_http_base_url,
     get_runtime_auth_defaults,
     get_runtime_defaults,
     get_runtime_operations_defaults,
+    get_runtime_security_policy_defaults,
     get_runtime_security_defaults,
     is_loopback_host,
     parse_csv_values,
     resolve_auth_metadata_urls,
     validate_runtime_auth_values,
+    validate_runtime_security_policy_values,
     validate_runtime_operation_values,
     validate_streamable_http_binding,
 )
@@ -210,6 +213,15 @@ def _auth_defaults(**overrides) -> RuntimeAuthDefaults:
     return RuntimeAuthDefaults(**payload)
 
 
+def _policy_defaults(**overrides) -> RuntimeSecurityPolicyDefaults:
+    payload = {
+        "security_profile": "baseline",
+        "audit_signing_key": "",
+    }
+    payload.update(overrides)
+    return RuntimeSecurityPolicyDefaults(**payload)
+
+
 def test_runtime_auth_defaults_parsing() -> None:
     defaults = get_runtime_auth_defaults(
         env={
@@ -232,6 +244,22 @@ def test_runtime_auth_defaults_parsing() -> None:
 def test_runtime_auth_defaults_invalid_mode() -> None:
     with pytest.raises(ValueError):
         get_runtime_auth_defaults(env={"GCC_MCP_AUTH_MODE": "jwt"})
+
+
+def test_runtime_security_policy_defaults_parsing() -> None:
+    defaults = get_runtime_security_policy_defaults(
+        env={
+            "GCC_MCP_SECURITY_PROFILE": "strict",
+            "GCC_MCP_AUDIT_SIGNING_KEY": " signing-key ",
+        }
+    )
+    assert defaults.security_profile == "strict"
+    assert defaults.audit_signing_key == "signing-key"
+
+
+def test_runtime_security_policy_defaults_invalid_profile() -> None:
+    with pytest.raises(ValueError):
+        get_runtime_security_policy_defaults(env={"GCC_MCP_SECURITY_PROFILE": "hardened"})
 
 
 @pytest.mark.parametrize("timeout", ["nan", "inf", "-inf"])
@@ -349,6 +377,70 @@ def test_validate_runtime_auth_values_oauth2_mode() -> None:
             oauth2_client_secret="client-secret",
             auth_required_scopes=("gcc.read",),
         ),
+    )
+
+
+def test_validate_runtime_security_policy_values_baseline_allows_local_defaults() -> None:
+    validate_runtime_security_policy_values(
+        transport="streamable-http",
+        auth_mode="off",
+        security_profile="baseline",
+        audit_log_path="",
+        audit_signing_key="",
+    )
+
+
+def test_validate_runtime_security_policy_values_signing_requires_audit_log() -> None:
+    with pytest.raises(ValueError):
+        validate_runtime_security_policy_values(
+            transport="streamable-http",
+            auth_mode="token",
+            security_profile="baseline",
+            audit_log_path="",
+            audit_signing_key="signing-key",
+        )
+
+
+def test_validate_runtime_security_policy_values_strict_mode() -> None:
+    with pytest.raises(ValueError):
+        validate_runtime_security_policy_values(
+            transport="streamable-http",
+            auth_mode="off",
+            security_profile="strict",
+            audit_log_path=".GCC/audit.jsonl",
+            audit_signing_key="signing-key",
+        )
+    with pytest.raises(ValueError):
+        validate_runtime_security_policy_values(
+            transport="streamable-http",
+            auth_mode="token",
+            security_profile="strict",
+            audit_log_path="",
+            audit_signing_key="signing-key",
+        )
+    with pytest.raises(ValueError):
+        validate_runtime_security_policy_values(
+            transport="streamable-http",
+            auth_mode="token",
+            security_profile="strict",
+            audit_log_path=".GCC/audit.jsonl",
+            audit_signing_key="",
+        )
+
+    validate_runtime_security_policy_values(
+        transport="streamable-http",
+        auth_mode="token",
+        security_profile="strict",
+        audit_log_path=".GCC/audit.jsonl",
+        audit_signing_key="signing-key",
+    )
+    # Strict profile focuses on remote transport; stdio remains valid.
+    validate_runtime_security_policy_values(
+        transport="stdio",
+        auth_mode="off",
+        security_profile="strict",
+        audit_log_path="",
+        audit_signing_key="",
     )
 
 

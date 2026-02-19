@@ -13,6 +13,7 @@ from urllib.parse import urlparse
 TRUE_VALUES = {"1", "true", "yes", "on"}
 FALSE_VALUES = {"0", "false", "no", "off"}
 AUTH_MODES = {"off", "token", "trusted-proxy-header", "oauth2"}
+SECURITY_PROFILES = {"baseline", "strict"}
 TRUSTED_PROXY_HEADER_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9-]{0,127}$")
 
 
@@ -31,6 +32,14 @@ class RuntimeAuthDefaults:
     auth_issuer_url: str
     auth_resource_server_url: str
     auth_required_scopes: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class RuntimeSecurityPolicyDefaults:
+    """Security-policy defaults sourced from environment variables or CLI."""
+
+    security_profile: str
+    audit_signing_key: str
 
 
 def get_runtime_defaults(env: Mapping[str, str] | None = None) -> tuple[str, str, int]:
@@ -77,6 +86,21 @@ def get_runtime_security_defaults(env: Mapping[str, str] | None = None) -> tuple
         default=True,
     )
     return allow_public_http_default, audit_log_path, audit_redact_sensitive
+
+
+def get_runtime_security_policy_defaults(
+    env: Mapping[str, str] | None = None,
+) -> RuntimeSecurityPolicyDefaults:
+    """Return security profile defaults from environment variables."""
+    source = os.environ if env is None else env
+    security_profile = source.get("GCC_MCP_SECURITY_PROFILE", "baseline").strip().lower()
+    if security_profile not in SECURITY_PROFILES:
+        allowed_profiles = ", ".join(sorted(SECURITY_PROFILES))
+        raise ValueError(f"GCC_MCP_SECURITY_PROFILE must be one of: {allowed_profiles}.")
+    return RuntimeSecurityPolicyDefaults(
+        security_profile=security_profile,
+        audit_signing_key=source.get("GCC_MCP_AUDIT_SIGNING_KEY", "").strip(),
+    )
 
 
 def get_runtime_auth_defaults(env: Mapping[str, str] | None = None) -> RuntimeAuthDefaults:
@@ -195,6 +219,41 @@ def validate_runtime_auth_values(
     if has_client_id != has_client_secret:
         raise ValueError(
             "oauth2-client-id and oauth2-client-secret must be provided together."
+        )
+
+
+def validate_runtime_security_policy_values(
+    transport: str,
+    auth_mode: str,
+    security_profile: str,
+    audit_log_path: str,
+    audit_signing_key: str,
+) -> None:
+    """Validate security policy interactions for remote runtime hardening."""
+    if security_profile not in SECURITY_PROFILES:
+        allowed_profiles = ", ".join(sorted(SECURITY_PROFILES))
+        raise ValueError(f"security-profile must be one of: {allowed_profiles}.")
+
+    normalized_audit_log_path = audit_log_path.strip()
+    normalized_signing_key = audit_signing_key.strip()
+
+    if normalized_signing_key and not normalized_audit_log_path:
+        raise ValueError("audit-signing-key requires audit-log-file.")
+
+    if security_profile != "strict" or transport != "streamable-http":
+        return
+
+    if auth_mode == "off":
+        raise ValueError(
+            "security-profile strict requires auth-mode other than 'off' for streamable-http."
+        )
+    if not normalized_audit_log_path:
+        raise ValueError(
+            "security-profile strict requires audit-log-file for streamable-http."
+        )
+    if not normalized_signing_key:
+        raise ValueError(
+            "security-profile strict requires audit-signing-key for streamable-http."
         )
 
 

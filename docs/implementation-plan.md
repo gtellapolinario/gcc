@@ -116,3 +116,19 @@ Execution items:
 4. Auth + transport validation hardening and metadata URL controls.
 5. Deployment/security docs updates with Envoy-based remote profile guidance.
 6. Regression tests for auth runtime parsing/validation and URL resolution.
+
+## v0.7 Policy Enforcement and Signed Audit Trails (in progress)
+
+Tracking:
+
+- Milestone: `GCC MCP v0.7 - Policy Enforcement and Signed Audit Trails`
+- Issue: `#18 v0.7 Execution: strict policy + signed audit trails`
+
+Execution items:
+
+1. Runtime security profile framework (`baseline`, `strict`).
+2. Strict-profile validation for remote operation (auth required; audit required; signing required).
+3. Optional HMAC-signed audit events with hash-chain metadata.
+4. Runtime parsing/validation for audit signing key and profile interactions.
+5. Regression tests for security-policy and signed-audit behavior.
+6. Deployment/security docs updates for strict profile rollout.

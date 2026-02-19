@@ -1,0 +1,36 @@
+[build-system]
+requires = ["hatchling>=1.27.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "gcc-mcp"
+version = "0.1.0"
+description = "MCP server for the Git Context Controller (GCC)"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "mcp>=1.12.4,<2",
+  "pydantic>=2.10.0,<3",
+  "PyYAML>=6.0.2,<7",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.3.0,<9",
+  "ruff>=0.9.0,<1",
+]
+
+[project.scripts]
+gcc-mcp = "gcc_mcp.server:main"
+gcc-cli = "gcc_mcp.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/gcc_mcp"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"

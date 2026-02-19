@@ -52,6 +52,7 @@ Primary trust boundaries:
 - Sensitive-looking fields are redacted by default (`GCC_MCP_AUDIT_REDACT=true`).
 - Audit log fields are truncated with configurable limits (`GCC_MCP_AUDIT_MAX_FIELD_CHARS`).
 - Optional HMAC signing adds per-event tamper-evident metadata (`GCC_MCP_AUDIT_SIGNING_KEY`).
+- Optional key IDs (`GCC_MCP_AUDIT_SIGNING_KEY_ID`) support key-rotation-aware verification.
 
 8. Operational guardrails:
 - Optional per-process tool-call rate limiting (`GCC_MCP_RATE_LIMIT_PER_MINUTE`).
@@ -77,4 +78,4 @@ Primary trust boundaries:
 - OAuth2 introspection availability/latency can affect request authorization outcomes.
 - Redaction is heuristic and should not be treated as formal secret detection.
 - Signed audits provide tamper evidence but not complete non-repudiation (key management remains critical).
-- Verifier currently supports one key per run; key rotation should use log-file rollover for deterministic validation.
+- Legacy signed events without key IDs require explicit fallback key material during verification.

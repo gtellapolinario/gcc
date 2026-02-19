@@ -39,10 +39,13 @@ class AuditLogger:
     redact_sensitive: bool = True
     max_field_chars: int = 4000
     signing_key: str = ""
+    signing_key_id: str = ""
     _previous_event_sha256: str | None = field(default=None, init=False, repr=False)
 
     def __post_init__(self) -> None:
         """Initialize signer chain state from existing log tail when possible."""
+        self.signing_key = self.signing_key.strip()
+        self.signing_key_id = self.signing_key_id.strip()
         if not self.log_path or not self.signing_key:
             return
         self._previous_event_sha256 = _read_last_event_hash(self.log_path)
@@ -100,6 +103,8 @@ class AuditLogger:
     def _sign_event(self, event: dict[str, Any]) -> tuple[dict[str, Any], str]:
         signing_payload = dict(event)
         signing_payload["prev_event_sha256"] = self._previous_event_sha256
+        if self.signing_key_id:
+            signing_payload["event_signing_key_id"] = self.signing_key_id
         canonical = json.dumps(signing_payload, ensure_ascii=True, sort_keys=True)
         canonical_bytes = canonical.encode("utf-8")
         event_sha256 = hashlib.sha256(canonical_bytes).hexdigest()
@@ -214,17 +219,20 @@ def _read_last_event_hash(path: Path) -> str | None:
     return None
 
 
-def verify_signed_audit_log(log_path: Path, signing_key: str) -> dict[str, Any]:
+def verify_signed_audit_log(
+    log_path: Path,
+    signing_key: str = "",
+    signing_keyring: dict[str, str] | None = None,
+) -> dict[str, Any]:
     """Verify HMAC signatures and hash-chain continuity for a signed audit log."""
     normalized_signing_key = signing_key.strip()
-    if not normalized_signing_key:
+    normalized_signing_keyring = _normalize_signing_keyring(signing_keyring or {})
+
+    if not normalized_signing_key and not normalized_signing_keyring:
         raise GCCError(
             ErrorCode.INVALID_INPUT,
-            "Audit signing key is required for verification.",
-            (
-                "Set --signing-key, --signing-key-file, GCC_MCP_AUDIT_SIGNING_KEY, "
-                "or GCC_MCP_AUDIT_SIGNING_KEY_FILE."
-            ),
+            "Signing key material is required for verification.",
+            "Provide --signing-key, --signing-key-file, or --signing-keyring-file.",
         )
 
     try:
@@ -246,7 +254,12 @@ def verify_signed_audit_log(log_path: Path, signing_key: str) -> dict[str, Any]:
 
             checked_entries += 1
             payload = _parse_json_line(line=line, line_number=line_number)
-            event_hash, signature, previous_hash_value = _extract_signed_event_fields(
+            (
+                event_hash,
+                signature,
+                previous_hash_value,
+                event_signing_key_id,
+            ) = _extract_signed_event_fields(
                 payload=payload,
                 line_number=line_number,
             )
@@ -286,7 +299,12 @@ def verify_signed_audit_log(log_path: Path, signing_key: str) -> dict[str, Any]:
                 )
 
             calculated_signature = hmac.new(
-                normalized_signing_key.encode("utf-8"),
+                _resolve_verification_key_for_event(
+                    signing_key=normalized_signing_key,
+                    signing_keyring=normalized_signing_keyring,
+                    event_signing_key_id=event_signing_key_id,
+                    line_number=line_number,
+                ).encode("utf-8"),
                 canonical_bytes,
                 hashlib.sha256,
             ).hexdigest()
@@ -333,7 +351,7 @@ def _parse_json_line(line: str, line_number: int) -> dict[str, Any]:
 def _extract_signed_event_fields(
     payload: dict[str, Any],
     line_number: int,
-) -> tuple[str, str, str | None]:
+) -> tuple[str, str, str | None, str | None]:
     event_hash = payload.get("event_sha256")
     if not isinstance(event_hash, str) or not event_hash:
         raise GCCError(
@@ -363,4 +381,81 @@ def _extract_signed_event_fields(
             details={"line_number": line_number},
         )
 
-    return event_hash, signature, previous_hash_value
+    event_signing_key_id = payload.get("event_signing_key_id")
+    if event_signing_key_id is not None and (
+        not isinstance(event_signing_key_id, str) or not event_signing_key_id
+    ):
+        raise GCCError(
+            ErrorCode.INVALID_INPUT,
+            "Invalid event_signing_key_id value in signed audit line.",
+            "Ensure event_signing_key_id is omitted or a non-empty string.",
+            details={"line_number": line_number},
+        )
+
+    return event_hash, signature, previous_hash_value, event_signing_key_id
+
+
+def _normalize_signing_keyring(signing_keyring: dict[str, str]) -> dict[str, str]:
+    normalized: dict[str, str] = {}
+    for key_id, key_value in signing_keyring.items():
+        if not isinstance(key_id, str) or not key_id.strip():
+            raise GCCError(
+                ErrorCode.INVALID_INPUT,
+                "Invalid signing keyring entry.",
+                "Each keyring entry must contain a non-empty string key id.",
+            )
+        if not isinstance(key_value, str) or not key_value.strip():
+            raise GCCError(
+                ErrorCode.INVALID_INPUT,
+                "Invalid signing keyring entry.",
+                "Each keyring entry must contain a non-empty string key value.",
+            )
+        normalized_key_id = key_id.strip()
+        normalized_key_value = key_value.strip()
+        if normalized_key_id in normalized:
+            raise GCCError(
+                ErrorCode.INVALID_INPUT,
+                "Duplicate signing keyring key id.",
+                "Use unique key ids after trimming whitespace.",
+            )
+        normalized[normalized_key_id] = normalized_key_value
+    return normalized
+
+
+def _resolve_verification_key_for_event(
+    signing_key: str,
+    signing_keyring: dict[str, str],
+    event_signing_key_id: str | None,
+    line_number: int,
+) -> str:
+    if event_signing_key_id:
+        if signing_keyring:
+            selected_key = signing_keyring.get(event_signing_key_id)
+            if not selected_key:
+                raise GCCError(
+                    ErrorCode.INVALID_INPUT,
+                    "Missing signing key for event_signing_key_id.",
+                    "Ensure signing keyring contains all key ids used in the log.",
+                    details={"line_number": line_number, "event_signing_key_id": event_signing_key_id},
+                )
+            return selected_key
+        if signing_key:
+            return signing_key
+        raise GCCError(
+            ErrorCode.INVALID_INPUT,
+            "Missing signing key material for key-id signed event.",
+            "Provide signing-keyring-file or signing-key.",
+            details={"line_number": line_number, "event_signing_key_id": event_signing_key_id},
+        )
+
+    if signing_key:
+        return signing_key
+    if len(signing_keyring) == 1:
+        return next(iter(signing_keyring.values()))
+
+    raise GCCError(
+        ErrorCode.INVALID_INPUT,
+        "Cannot resolve verification key for event without key id.",
+        "Provide --signing-key for legacy logs without event_signing_key_id.",
+        details={"line_number": line_number},
+    )

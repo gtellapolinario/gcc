@@ -34,6 +34,56 @@ def _csv_list(value: str) -> list[str]:
     return [item.strip() for item in value.split(",") if item.strip()]
 
 
+def _load_signing_keyring(path_value: str) -> dict[str, str]:
+    keyring_path = Path(path_value).expanduser()
+    try:
+        payload = json.loads(keyring_path.read_text(encoding="utf-8"))
+    except OSError as exc:
+        raise GCCError(
+            ErrorCode.INVALID_INPUT,
+            "Unable to read signing-keyring-file.",
+            "Ensure --signing-keyring-file points to a readable JSON file.",
+        ) from exc
+    except json.JSONDecodeError as exc:
+        raise GCCError(
+            ErrorCode.INVALID_INPUT,
+            "signing-keyring-file must contain valid JSON object mapping key ids to keys.",
+            "Provide JSON like {\"k1\": \"secret1\", \"k2\": \"secret2\"}.",
+        ) from exc
+
+    if not isinstance(payload, dict):
+        raise GCCError(
+            ErrorCode.INVALID_INPUT,
+            "signing-keyring-file must contain a JSON object.",
+            "Provide JSON like {\"k1\": \"secret1\", \"k2\": \"secret2\"}.",
+        )
+
+    keyring: dict[str, str] = {}
+    for key_id, key_value in payload.items():
+        if not isinstance(key_id, str) or not key_id.strip():
+            raise GCCError(
+                ErrorCode.INVALID_INPUT,
+                "signing-keyring-file contains empty key id or key.",
+                "All key ids must be non-empty strings.",
+            )
+        if not isinstance(key_value, str) or not key_value.strip():
+            raise GCCError(
+                ErrorCode.INVALID_INPUT,
+                "signing-keyring-file contains empty key id or key.",
+                "All key values must be non-empty strings.",
+            )
+        normalized_key_id = key_id.strip()
+        normalized_key_value = key_value.strip()
+        if normalized_key_id in keyring:
+            raise GCCError(
+                ErrorCode.INVALID_INPUT,
+                "signing-keyring-file contains duplicate key ids.",
+                "Use unique key ids after trimming whitespace.",
+            )
+        keyring[normalized_key_id] = normalized_key_value
+    return keyring
+
+
 def _print_payload(payload: dict[str, Any], as_json: bool) -> None:
     if as_json:
         print(json.dumps(payload, indent=2))
@@ -276,6 +326,11 @@ def _build_parser() -> argparse.ArgumentParser:
         default=os.environ.get("GCC_MCP_AUDIT_SIGNING_KEY_FILE", ""),
         help="Optional file path containing signing key; safer than inline key.",
     )
+    audit_verify.add_argument(
+        "--signing-keyring-file",
+        default=os.environ.get("GCC_MCP_AUDIT_SIGNING_KEYRING_FILE", ""),
+        help="Optional JSON file mapping signing key ids to keys for rotated logs.",
+    )
     audit_verify.add_argument("--json", action="store_true", help="Output machine-readable JSON")
 
     return parser
@@ -443,9 +498,15 @@ def main(argv: list[str] | None = None) -> int:
                     str(exc),
                     "Provide signing key via --signing-key-file or GCC_MCP_AUDIT_SIGNING_KEY.",
                 ) from exc
+
+            keyring: dict[str, str] = {}
+            if str(args.signing_keyring_file).strip():
+                keyring = _load_signing_keyring(str(args.signing_keyring_file))
+
             response = verify_signed_audit_log(
                 log_path=Path(args.log_file),
                 signing_key=signing_key,
+                signing_keyring=keyring,
             )
         else:
             response = engine.get_status(StatusRequest(directory=args.directory)).model_dump(mode="json")

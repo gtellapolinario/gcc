@@ -219,6 +219,7 @@ def _policy_defaults(**overrides) -> RuntimeSecurityPolicyDefaults:
         "security_profile": "baseline",
         "audit_signing_key": "",
         "audit_signing_key_file": "",
+        "audit_signing_key_id": "",
     }
     payload.update(overrides)
     return RuntimeSecurityPolicyDefaults(**payload)
@@ -254,11 +255,13 @@ def test_runtime_security_policy_defaults_parsing() -> None:
             "GCC_MCP_SECURITY_PROFILE": "strict",
             "GCC_MCP_AUDIT_SIGNING_KEY": " signing-key ",
             "GCC_MCP_AUDIT_SIGNING_KEY_FILE": " /tmp/audit-signing.key ",
+            "GCC_MCP_AUDIT_SIGNING_KEY_ID": " key-a ",
         }
     )
     assert defaults.security_profile == "strict"
     assert defaults.audit_signing_key == "signing-key"
     assert defaults.audit_signing_key_file == "/tmp/audit-signing.key"
+    assert defaults.audit_signing_key_id == "key-a"
 
 
 def test_runtime_security_policy_defaults_invalid_profile() -> None:
@@ -414,6 +417,19 @@ def test_validate_runtime_security_policy_values_signing_key_sources_mutually_ex
             audit_log_path=".GCC/audit.jsonl",
             audit_signing_key="signing-key",
             audit_signing_key_file=".secrets/audit-signing.key",
+        )
+
+
+def test_validate_runtime_security_policy_values_signing_key_id_requires_key_material() -> None:
+    with pytest.raises(ValueError):
+        validate_runtime_security_policy_values(
+            transport="streamable-http",
+            auth_mode="token",
+            security_profile="baseline",
+            audit_log_path=".GCC/audit.jsonl",
+            audit_signing_key="",
+            audit_signing_key_file="",
+            audit_signing_key_id="key-a",
         )
 
 

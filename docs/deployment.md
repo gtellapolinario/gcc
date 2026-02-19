@@ -24,7 +24,7 @@ gcc-mcp --transport streamable-http --host 127.0.0.1 --port 8000
 gcc-mcp --transport streamable-http --host 0.0.0.0 --port 8000 --allow-public-http
 gcc-mcp --transport streamable-http --host 127.0.0.1 --no-allow-public-http
 gcc-mcp --rate-limit-per-minute 120 --audit-max-field-chars 4096
-gcc-mcp --security-profile strict --audit-log-file .GCC/server-audit.jsonl --audit-signing-key-file .secrets/audit-signing.key
+gcc-mcp --security-profile strict --audit-log-file .GCC/server-audit.jsonl --audit-signing-key-file .secrets/audit-signing.key --audit-signing-key-id key-2026-q1
 gcc-mcp --transport streamable-http --auth-mode token --auth-token 'replace-me'
 gcc-mcp --transport streamable-http --auth-mode trusted-proxy-header \
   --trusted-proxy-header x-gcc-proxy-auth \
@@ -44,6 +44,7 @@ gcc-mcp --transport streamable-http --auth-mode oauth2 \
 - `GCC_MCP_AUDIT_REDACT` (`true`/`false`, default `true`)
 - `GCC_MCP_AUDIT_SIGNING_KEY` (optional key for signed audit events; requires audit log path)
 - `GCC_MCP_AUDIT_SIGNING_KEY_FILE` (optional file containing signing key; mutually exclusive with direct key)
+- `GCC_MCP_AUDIT_SIGNING_KEY_ID` (optional signing key identifier written to each signed event)
 - `GCC_MCP_RATE_LIMIT_PER_MINUTE` (integer, default `0` disables limiter)
 - `GCC_MCP_AUDIT_MAX_FIELD_CHARS` (integer, default `4000`; `0` disables truncation, otherwise minimum `64`)
 - `GCC_MCP_SECURITY_PROFILE` (`baseline` default or `strict`)
@@ -67,6 +68,7 @@ export GCC_MCP_PORT=8000
 export GCC_MCP_ALLOW_PUBLIC_HTTP=true
 export GCC_MCP_AUDIT_LOG=.GCC/server-audit.jsonl
 export GCC_MCP_AUDIT_SIGNING_KEY_FILE=.secrets/audit-signing.key
+export GCC_MCP_AUDIT_SIGNING_KEY_ID=key-2026-q1
 export GCC_MCP_SECURITY_PROFILE=strict
 export GCC_MCP_RATE_LIMIT_PER_MINUTE=120
 export GCC_MCP_AUDIT_MAX_FIELD_CHARS=4096
@@ -153,7 +155,9 @@ gcc-mcp \
 - Non-loopback `streamable-http` host binding requires explicit opt-in (`--allow-public-http` or env).
 - MCP tool invocations can be logged in structured JSONL with optional sensitive-field redaction.
 - Signed audit metadata (HMAC + hash chain reference) is available with `audit-signing-key`.
+- Signed events can include optional key identifiers (`audit-signing-key-id`) to support key rotation.
 - Signed audit key can be sourced from file (`audit-signing-key-file`) to reduce secret exposure.
+- Verification supports keyring files for rotated keys (`gcc-cli audit-verify --signing-keyring-file ...`).
 - Optional per-process rate limiting can cap request volume in remote mode.
 - Audit log string fields are truncated using configurable max length limits.
 - `auth-mode` values other than `off` require streamable HTTP transport.

@@ -299,3 +299,78 @@ def test_cli_audit_verify_success_and_failure(tmp_path: Path, capsys) -> None:
     assert failure["exit_code"] == 1
     assert failure["payload"]["status"] == "error"
     assert failure["payload"]["error_code"] == "INVALID_INPUT"
+
+
+def test_cli_audit_verify_with_signing_keyring_file(tmp_path: Path, capsys) -> None:
+    log_path = tmp_path / "audit.jsonl"
+    keyring_path = tmp_path / "signing-keyring.json"
+    key_a = "unit-test-signing-key-a"
+    key_b = "unit-test-signing-key-b"
+
+    logger_a = AuditLogger(
+        log_path=log_path,
+        redact_sensitive=False,
+        signing_key=key_a,
+        signing_key_id="k-a",
+    )
+    logger_a.log_tool_event(
+        tool_name="gcc_status",
+        status="success",
+        request_payload={"directory": str(tmp_path)},
+        response_payload={"status": "success"},
+    )
+    logger_b = AuditLogger(
+        log_path=log_path,
+        redact_sensitive=False,
+        signing_key=key_b,
+        signing_key_id="k-b",
+    )
+    logger_b.log_tool_event(
+        tool_name="gcc_context",
+        status="success",
+        request_payload={"level": "summary"},
+        response_payload={"status": "success"},
+    )
+
+    keyring_path.write_text(json.dumps({"k-a": key_a, "k-b": key_b}), encoding="utf-8")
+    result = _run_cli_json(
+        [
+            "audit-verify",
+            "--log-file",
+            str(log_path),
+            "--signing-keyring-file",
+            str(keyring_path),
+        ],
+        capsys,
+    )
+    assert result["exit_code"] == 0
+    assert result["payload"]["status"] == "success"
+    assert result["payload"]["entries_checked"] == 2
+
+
+def test_cli_audit_verify_rejects_invalid_signing_keyring_file(tmp_path: Path, capsys) -> None:
+    log_path = tmp_path / "audit.jsonl"
+    signing_key = "unit-test-signing-key"
+    keyring_path = tmp_path / "invalid-keyring.json"
+    logger = AuditLogger(log_path=log_path, redact_sensitive=False, signing_key=signing_key)
+    logger.log_tool_event(
+        tool_name="gcc_status",
+        status="success",
+        request_payload={"directory": str(tmp_path)},
+        response_payload={"status": "success"},
+    )
+
+    keyring_path.write_text(json.dumps({"k-a": signing_key, " k-a ": "other"}), encoding="utf-8")
+    result = _run_cli_json(
+        [
+            "audit-verify",
+            "--log-file",
+            str(log_path),
+            "--signing-keyring-file",
+            str(keyring_path),
+        ],
+        capsys,
+    )
+    assert result["exit_code"] == 1
+    assert result["payload"]["status"] == "error"
+    assert result["payload"]["error_code"] == "INVALID_INPUT"

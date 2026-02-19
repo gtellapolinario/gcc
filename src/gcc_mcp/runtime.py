@@ -42,6 +42,7 @@ class RuntimeSecurityPolicyDefaults:
     security_profile: str
     audit_signing_key: str
     audit_signing_key_file: str
+    audit_signing_key_id: str
 
 
 def get_runtime_defaults(env: Mapping[str, str] | None = None) -> tuple[str, str, int]:
@@ -103,6 +104,7 @@ def get_runtime_security_policy_defaults(
         security_profile=security_profile,
         audit_signing_key=source.get("GCC_MCP_AUDIT_SIGNING_KEY", "").strip(),
         audit_signing_key_file=source.get("GCC_MCP_AUDIT_SIGNING_KEY_FILE", "").strip(),
+        audit_signing_key_id=source.get("GCC_MCP_AUDIT_SIGNING_KEY_ID", "").strip(),
     )
 
 
@@ -232,6 +234,7 @@ def validate_runtime_security_policy_values(
     audit_log_path: str,
     audit_signing_key: str,
     audit_signing_key_file: str = "",
+    audit_signing_key_id: str = "",
     audit_signing_key_from_cli: bool = False,
 ) -> None:
     """Validate security policy interactions for remote runtime hardening."""
@@ -242,9 +245,12 @@ def validate_runtime_security_policy_values(
     normalized_audit_log_path = audit_log_path.strip()
     normalized_signing_key = audit_signing_key.strip()
     normalized_signing_key_file = audit_signing_key_file.strip()
+    normalized_signing_key_id = audit_signing_key_id.strip()
 
     if normalized_signing_key and normalized_signing_key_file:
         raise ValueError("audit-signing-key and audit-signing-key-file are mutually exclusive.")
+    if normalized_signing_key_id and not (normalized_signing_key or normalized_signing_key_file):
+        raise ValueError("audit-signing-key-id requires audit-signing-key material.")
 
     if (normalized_signing_key or normalized_signing_key_file) and not normalized_audit_log_path:
         raise ValueError("audit-signing-key requires audit-log-file.")

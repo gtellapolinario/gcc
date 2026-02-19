@@ -276,6 +276,143 @@ def test_verify_signed_audit_log_success(tmp_path: Path) -> None:
     assert result["entries_checked"] == 2
 
 
+def test_verify_signed_audit_log_supports_rotated_keys_with_keyring(tmp_path: Path) -> None:
+    log_path = tmp_path / "audit.jsonl"
+    key_a = "unit-test-signing-key-a"
+    key_b = "unit-test-signing-key-b"
+
+    logger_a = AuditLogger(
+        log_path=log_path,
+        redact_sensitive=False,
+        signing_key=key_a,
+        signing_key_id="k-a",
+    )
+    logger_a.log_tool_event(
+        tool_name="gcc_status",
+        status="success",
+        request_payload={"directory": str(tmp_path)},
+        response_payload={"status": "success"},
+    )
+    logger_b = AuditLogger(
+        log_path=log_path,
+        redact_sensitive=False,
+        signing_key=key_b,
+        signing_key_id="k-b",
+    )
+    logger_b.log_tool_event(
+        tool_name="gcc_context",
+        status="success",
+        request_payload={"level": "summary"},
+        response_payload={"status": "success"},
+    )
+
+    result = verify_signed_audit_log(
+        log_path=log_path,
+        signing_keyring={"k-a": key_a, "k-b": key_b},
+    )
+    assert result["status"] == "success"
+    assert result["entries_checked"] == 2
+
+
+def test_verify_signed_audit_log_supports_mixed_legacy_and_key_id_events(tmp_path: Path) -> None:
+    log_path = tmp_path / "audit.jsonl"
+    legacy_key = "unit-test-legacy-key"
+    rotated_key = "unit-test-rotated-key"
+
+    legacy_logger = AuditLogger(
+        log_path=log_path,
+        redact_sensitive=False,
+        signing_key=legacy_key,
+    )
+    legacy_logger.log_tool_event(
+        tool_name="gcc_status",
+        status="success",
+        request_payload={"directory": str(tmp_path)},
+        response_payload={"status": "success"},
+    )
+
+    rotated_logger = AuditLogger(
+        log_path=log_path,
+        redact_sensitive=False,
+        signing_key=rotated_key,
+        signing_key_id="k-rotated",
+    )
+    rotated_logger.log_tool_event(
+        tool_name="gcc_context",
+        status="success",
+        request_payload={"level": "summary"},
+        response_payload={"status": "success"},
+    )
+
+    result = verify_signed_audit_log(
+        log_path=log_path,
+        signing_key=legacy_key,
+        signing_keyring={"k-rotated": rotated_key},
+    )
+    assert result["status"] == "success"
+    assert result["entries_checked"] == 2
+
+
+def test_verify_signed_audit_log_rejects_missing_keyring_entry_for_key_id(tmp_path: Path) -> None:
+    log_path = tmp_path / "audit.jsonl"
+    signing_key = "unit-test-signing-key"
+    logger = AuditLogger(
+        log_path=log_path,
+        redact_sensitive=False,
+        signing_key=signing_key,
+        signing_key_id="k-a",
+    )
+    logger.log_tool_event(
+        tool_name="gcc_status",
+        status="success",
+        request_payload={"directory": str(tmp_path)},
+        response_payload={"status": "success"},
+    )
+
+    with pytest.raises(GCCError):
+        verify_signed_audit_log(
+            log_path=log_path,
+            signing_keyring={"k-b": signing_key},
+        )
+
+
+def test_verify_signed_audit_log_supports_single_keyring_entry_for_legacy_logs(tmp_path: Path) -> None:
+    log_path = tmp_path / "audit.jsonl"
+    signing_key = "unit-test-signing-key"
+    logger = AuditLogger(log_path=log_path, redact_sensitive=False, signing_key=signing_key)
+    logger.log_tool_event(
+        tool_name="gcc_status",
+        status="success",
+        request_payload={"directory": str(tmp_path)},
+        response_payload={"status": "success"},
+    )
+
+    result = verify_signed_audit_log(
+        log_path=log_path,
+        signing_keyring={"legacy": signing_key},
+    )
+    assert result["status"] == "success"
+    assert result["entries_checked"] == 1
+
+
+def test_verify_signed_audit_log_rejects_ambiguous_keyring_for_legacy_logs(tmp_path: Path) -> None:
+    log_path = tmp_path / "audit.jsonl"
+    signing_key = "unit-test-signing-key"
+    logger = AuditLogger(log_path=log_path, redact_sensitive=False, signing_key=signing_key)
+    logger.log_tool_event(
+        tool_name="gcc_status",
+        status="success",
+        request_payload={"directory": str(tmp_path)},
+        response_payload={"status": "success"},
+    )
+
+    with pytest.raises(GCCError):
+        verify_signed_audit_log(
+            log_path=log_path,
+            signing_keyring={"k-a": signing_key, "k-b": "another-key"},
+        )
+
+
 def test_verify_signed_audit_log_detects_tampering(tmp_path: Path) -> None:
     log_path = tmp_path / "audit.jsonl"
     signing_key = "unit-test-signing-key"
@@ -301,6 +438,14 @@ def test_verify_signed_audit_log_rejects_invalid_signing_key_input(tmp_path: Pat
         verify_signed_audit_log(
             log_path=tmp_path / "audit.jsonl",
             signing_key="  ",
+        )
+
+
+def test_verify_signed_audit_log_rejects_invalid_keyring_input(tmp_path: Path) -> None:
+    with pytest.raises(GCCError):
+        verify_signed_audit_log(
+            log_path=tmp_path / "audit.jsonl",
+            signing_keyring={"k-a": ""},
         )
 
 

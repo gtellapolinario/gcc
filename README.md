@@ -147,7 +147,8 @@ gcc-mcp --transport streamable-http \
   --auth-mode token \
   --auth-token 'replace-me' \
   --audit-log-file .GCC/server-audit.jsonl \
-  --audit-signing-key-file .secrets/audit-signing.key
+  --audit-signing-key-file .secrets/audit-signing.key \
+  --audit-signing-key-id key-2026-q1
 ```
 
 Environment variable equivalents:
@@ -160,6 +161,7 @@ Environment variable equivalents:
 - `GCC_MCP_AUDIT_REDACT` (`true/false`, default `true`)
 - `GCC_MCP_AUDIT_SIGNING_KEY` (optional key for signed audit events; requires audit log)
 - `GCC_MCP_AUDIT_SIGNING_KEY_FILE` (optional file source for audit signing key)
+- `GCC_MCP_AUDIT_SIGNING_KEY_ID` (optional signing key identifier written to signed events)
 - `GCC_MCP_RATE_LIMIT_PER_MINUTE` (integer, default `0` = disabled)
 - `GCC_MCP_AUDIT_MAX_FIELD_CHARS` (integer, default `4000`; `0` disables truncation)
 - `GCC_MCP_SECURITY_PROFILE` (`baseline` default or `strict`)
@@ -204,6 +206,14 @@ Verify signed audit log integrity:
 gcc-cli audit-verify \
   --log-file .GCC/server-audit.jsonl \
   --signing-key-file .secrets/audit-signing.key
+```
+
+Verify rotated-key logs in one pass:
+
+```bash
+gcc-cli audit-verify \
+  --log-file .GCC/server-audit.jsonl \
+  --signing-keyring-file .secrets/audit-signing-keyring.json
 ```
 
 ## CI Quality Gates

@@ -589,6 +589,11 @@ def main() -> None:
         ),
     )
     parser.add_argument(
+        "--audit-signing-key-id",
+        default=security_policy_defaults.audit_signing_key_id,
+        help="Optional key identifier persisted with signed audit events for rotation support.",
+    )
+    parser.add_argument(
         "--auth-mode",
         choices=sorted(AUTH_MODES),
         default=auth_defaults.auth_mode,
@@ -662,6 +667,7 @@ def main() -> None:
         security_profile=str(args.security_profile).strip().lower(),
         audit_signing_key=str(args.audit_signing_key).strip(),
         audit_signing_key_file=str(args.audit_signing_key_file).strip(),
+        audit_signing_key_id=str(args.audit_signing_key_id).strip(),
     )
     runtime_auth = RuntimeAuthDefaults(
         auth_mode=args.auth_mode,
@@ -698,6 +704,7 @@ def main() -> None:
             audit_log_path=str(args.audit_log_file),
             audit_signing_key=runtime_policy.audit_signing_key,
             audit_signing_key_file=runtime_policy.audit_signing_key_file,
+            audit_signing_key_id=runtime_policy.audit_signing_key_id,
             audit_signing_key_from_cli=(
                 _cli_option_supplied("--audit-signing-key")
                 and bool(runtime_policy.audit_signing_key)
@@ -718,6 +725,7 @@ def main() -> None:
         redact_sensitive=bool(args.audit_redact_sensitive),
         max_field_chars=int(args.audit_max_field_chars),
         signing_key=resolved_audit_signing_key,
+        signing_key_id=runtime_policy.audit_signing_key_id,
     )
     rate_limiter.configure(int(args.rate_limit_per_minute))
     _configure_fastmcp_auth(

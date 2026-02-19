@@ -176,3 +176,16 @@ Execution items:
 2. Keep stable error contract and runtime guardrails across expanded tool set.
 3. Add regression tests for new tool flows and edge cases.
 4. Refresh docs/mapping/evaluation artifacts after tool expansion.
+
+## v1.1 SDK Compatibility and CI Resilience (in progress)
+
+Tracking:
+
+- Milestone: `GCC MCP v1.1 - SDK Compatibility and CI Resilience`
+- Issue: `#26 v1.1 Execution: SDK compatibility hardening and constructor regression tests`
+
+Execution items:
+
+1. Harden FastMCP constructor compatibility across supported SDK versions.
+2. Add deterministic tests for optional-kwarg fallback and error propagation.
+3. Keep docs/tracking aligned with compatibility policy decisions.

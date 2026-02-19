@@ -52,3 +52,6 @@ This server implementation follows official MCP guidance from:
    - Optional HMAC-signed audit entries with hash-chain metadata for tamper evidence.
 19. Operational verifiability:
    - Signed audit logs can be validated post-hoc with deterministic chain/hash/signature checks.
+20. SDK compatibility resilience:
+   - FastMCP constructor/tool registration paths include compatibility fallbacks for SDK drift.
+   - Regression tests cover optional-parameter fallback behavior.

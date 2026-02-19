@@ -10,6 +10,21 @@ from pathlib import Path
 from typing import Any
 
 SENSITIVE_KEY_PATTERN = re.compile(r"(?i)(password|passwd|secret|token|api[_-]?key|authorization)")
+SENSITIVE_ASSIGNMENT_PATTERN = re.compile(
+    r"(?i)\b(password|passwd|secret|token|api[_-]?key|authorization)\s*[:=]\s*([^\s,;]+)"
+)
+BEARER_TOKEN_PATTERN = re.compile(r"(?i)\bbearer\s+[a-z0-9\-\._~\+\/]+=*")
+JWT_PATTERN = re.compile(r"\beyJ[A-Za-z0-9_\-]*\.[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+\b")
+API_KEY_PREFIX_PATTERN = re.compile(
+    r"(?i)\b(?:sk|rk|pk|ghp|github_pat)_[A-Za-z0-9_\-]{16,}\b"
+)
+BASE64_LIKE_PATTERN = re.compile(r"\b[A-Za-z0-9+/]{40,}={0,2}\b")
+GENERIC_LONG_TOKEN_PATTERN = re.compile(r"\b[A-Za-z0-9_\-]{64,}\b")
+UUID_PATTERN = re.compile(
+    r"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}"
+    r"-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}\b"
+)
+SHA1_PATTERN = re.compile(r"\b[0-9a-fA-F]{40}\b")
 
 
 @dataclass(slots=True)
@@ -80,11 +95,21 @@ def _redact_payload(payload: Any) -> Any:
 
 def _redact_string(value: str) -> str:
     redacted = value
-    redacted = re.sub(
-        r"(?i)\b(password|passwd|secret|token|api[_-]?key|authorization)\s*[:=]\s*([^\s,;]+)",
-        r"\1=[REDACTED]",
-        redacted,
-    )
-    redacted = re.sub(r"(?i)\bbearer\s+[a-z0-9\-\._~\+\/]+=*", "Bearer [REDACTED]", redacted)
-    redacted = re.sub(r"\b[A-Za-z0-9_\-]{24,}\b", "[REDACTED]", redacted)
+    redacted = SENSITIVE_ASSIGNMENT_PATTERN.sub(r"\1=[REDACTED]", redacted)
+    redacted = BEARER_TOKEN_PATTERN.sub("Bearer [REDACTED]", redacted)
+    redacted = JWT_PATTERN.sub("[REDACTED]", redacted)
+    redacted = API_KEY_PREFIX_PATTERN.sub("[REDACTED]", redacted)
+    redacted = BASE64_LIKE_PATTERN.sub(_redact_high_entropy_match, redacted)
+    redacted = GENERIC_LONG_TOKEN_PATTERN.sub(_redact_high_entropy_match, redacted)
     return redacted
+
+
+def _redact_high_entropy_match(match: re.Match[str]) -> str:
+    token = match.group(0)
+    if _is_common_identifier(token):
+        return token
+    return "[REDACTED]"
+
+
+def _is_common_identifier(token: str) -> bool:
+    return bool(UUID_PATTERN.fullmatch(token) or SHA1_PATTERN.fullmatch(token))

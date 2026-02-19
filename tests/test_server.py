@@ -135,8 +135,12 @@ def test_validate_streamable_http_binding(
     ("host", "is_loopback"),
     [
         ("127.0.0.1", True),
+        ("127.0.0.2", True),
+        ("127.255.255.254", True),
         ("localhost", True),
+        ("LOCALHOST", True),
         ("::1", True),
+        ("[::1]", True),
         ("0.0.0.0", False),
         ("10.0.0.7", False),
     ],

@@ -13,6 +13,7 @@
 gcc-mcp --transport stdio
 gcc-mcp --transport streamable-http --host 127.0.0.1 --port 8000
 gcc-mcp --transport streamable-http --host 0.0.0.0 --port 8000 --allow-public-http
+gcc-mcp --transport streamable-http --host 127.0.0.1 --no-allow-public-http
 ```
 
 ### Environment variables

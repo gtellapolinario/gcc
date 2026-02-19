@@ -419,7 +419,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--allow-public-http",
-        action="store_true",
+        action=argparse.BooleanOptionalAction,
         default=allow_public_http_default,
         help=(
             "Allow non-loopback streamable-http host binding. "

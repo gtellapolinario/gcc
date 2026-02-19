@@ -37,6 +37,12 @@ Explicit public binding (non-loopback host) requires opt-in:
 gcc-mcp --transport streamable-http --host 0.0.0.0 --port 8000 --allow-public-http
 ```
 
+If `GCC_MCP_ALLOW_PUBLIC_HTTP=true` is set in environment, you can still disable it per run:
+
+```bash
+gcc-mcp --transport streamable-http --host 127.0.0.1 --no-allow-public-http
+```
+
 Or (module mode):
 
 ```bash

@@ -51,18 +51,42 @@ from .runtime import (
 
 logger = logging.getLogger(__name__)
 
-mcp = FastMCP(
-    name="git-context-controller",
-    instructions=(
-        "Manage AI agent project context with Git-inspired operations. "
-        "Use gcc_init, gcc_commit, gcc_branch, gcc_merge, gcc_context, gcc_status, "
-        "gcc_log, gcc_list, gcc_checkout, gcc_delete, gcc_config_get, "
-        "gcc_config_set, and gcc_config_list to checkpoint work, explore alternatives, "
-        "operate branches, and recover structured history."
-    ),
-    version="0.1.0",
-    json_response=True,
-)
+
+def _build_fastmcp() -> FastMCP:
+    """Instantiate FastMCP with compatibility fallbacks for older SDK versions."""
+    kwargs: dict[str, Any] = {
+        "name": "git-context-controller",
+        "instructions": (
+            "Manage AI agent project context with Git-inspired operations. "
+            "Use gcc_init, gcc_commit, gcc_branch, gcc_merge, gcc_context, gcc_status, "
+            "gcc_log, gcc_list, gcc_checkout, gcc_delete, gcc_config_get, "
+            "gcc_config_set, and gcc_config_list to checkpoint work, explore alternatives, "
+            "operate branches, and recover structured history."
+        ),
+        "version": "0.1.0",
+        "json_response": True,
+    }
+    optional_keys = ("version", "json_response")
+
+    while True:
+        try:
+            return FastMCP(**kwargs)
+        except TypeError as exc:
+            message = str(exc).lower()
+            if "unexpected keyword argument" not in message:
+                raise
+
+            removed_key = next((key for key in optional_keys if key in message and key in kwargs), None)
+            if removed_key is None:
+                raise
+            kwargs.pop(removed_key, None)
+            logger.debug(
+                "FastMCP constructor does not support '%s'; using compatibility fallback.",
+                removed_key,
+            )
+
+
+mcp = _build_fastmcp()
 
 engine = GCCEngine()
 audit_logger = AuditLogger()

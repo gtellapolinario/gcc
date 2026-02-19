@@ -226,7 +226,7 @@ def gcc_commit(
         "tests_passed": tests_passed,
         "notes": notes,
         "tags": tags or [],
-        "ota_log": ota_log or {},
+        "ota_log": ota_log,
     }
 
     def _operation() -> dict[str, Any]:

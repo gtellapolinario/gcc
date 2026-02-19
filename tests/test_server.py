@@ -113,6 +113,11 @@ def test_runtime_operations_defaults_ok() -> None:
     assert max_chars == 2048
 
 
+def test_runtime_operations_defaults_zero_disables_truncation() -> None:
+    _, max_chars = get_runtime_operations_defaults(env={"GCC_MCP_AUDIT_MAX_FIELD_CHARS": "0"})
+    assert max_chars == 0
+
+
 def test_runtime_operations_defaults_invalid_values() -> None:
     with pytest.raises(ValueError):
         get_runtime_operations_defaults(env={"GCC_MCP_RATE_LIMIT_PER_MINUTE": "-1"})
@@ -123,6 +128,7 @@ def test_runtime_operations_defaults_invalid_values() -> None:
 
 
 def test_validate_runtime_operation_values() -> None:
+    validate_runtime_operation_values(rate_limit_per_minute=0, audit_max_field_chars=0)
     validate_runtime_operation_values(rate_limit_per_minute=0, audit_max_field_chars=64)
     validate_runtime_operation_values(rate_limit_per_minute=100, audit_max_field_chars=4096)
     with pytest.raises(ValueError):

@@ -26,7 +26,7 @@ gcc-mcp --rate-limit-per-minute 120 --audit-max-field-chars 4096
 - `GCC_MCP_AUDIT_LOG` (optional JSONL file path)
 - `GCC_MCP_AUDIT_REDACT` (`true`/`false`, default `true`)
 - `GCC_MCP_RATE_LIMIT_PER_MINUTE` (integer, default `0` disables limiter)
-- `GCC_MCP_AUDIT_MAX_FIELD_CHARS` (integer, default `4000`, minimum `64`)
+- `GCC_MCP_AUDIT_MAX_FIELD_CHARS` (integer, default `4000`; `0` disables truncation, otherwise minimum `64`)
 
 Example:
 

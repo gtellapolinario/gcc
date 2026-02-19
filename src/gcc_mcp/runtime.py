@@ -69,7 +69,11 @@ def get_runtime_operations_defaults(env: Mapping[str, str] | None = None) -> tup
         source=source,
         key="GCC_MCP_AUDIT_MAX_FIELD_CHARS",
         default=4000,
-        min_value=64,
+        min_value=0,
+    )
+    validate_runtime_operation_values(
+        rate_limit_per_minute=rate_limit_per_minute,
+        audit_max_field_chars=audit_max_field_chars,
     )
     return rate_limit_per_minute, audit_max_field_chars
 
@@ -78,8 +82,8 @@ def validate_runtime_operation_values(rate_limit_per_minute: int, audit_max_fiel
     """Validate operation-level runtime values from CLI or other sources."""
     if rate_limit_per_minute < 0:
         raise ValueError("rate-limit-per-minute must be >= 0.")
-    if audit_max_field_chars < 64:
-        raise ValueError("audit-max-field-chars must be >= 64.")
+    if audit_max_field_chars < 0 or (0 < audit_max_field_chars < 64):
+        raise ValueError("audit-max-field-chars must be 0 or >= 64.")
 
 
 def validate_streamable_http_binding(transport: str, host: str, allow_public_http: bool) -> None:

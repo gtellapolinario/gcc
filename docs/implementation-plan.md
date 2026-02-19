@@ -70,3 +70,18 @@ Execution items:
 3. Expanded docstring coverage across core runtime modules.
 4. Regression tests for traversal and runtime validation edge cases.
 5. Security model and deployment hardening documentation.
+
+## v0.4 Remote Hardening and Auditing (in progress)
+
+Tracking:
+
+- Milestone: `GCC MCP v0.4 - Remote Transport Hardening and Auditing`
+- Issue: `#12 v0.4 Remote hardening + audit logging execution`
+
+Execution items:
+
+1. Public streamable HTTP binding guard with explicit operator opt-in.
+2. Structured MCP tool-call audit logs (JSONL) with sensitive-field redaction.
+3. Expanded runtime settings validation (`GCC_MCP_ALLOW_PUBLIC_HTTP`, audit settings).
+4. Regression tests for host exposure and audit/runtime edge cases.
+5. Deployment/security docs updates for remote operations.

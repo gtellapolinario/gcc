@@ -37,8 +37,13 @@ Primary trust boundaries:
 5. Runtime startup validation:
 - `GCC_MCP_TRANSPORT` only permits `stdio` or `streamable-http`.
 - `GCC_MCP_PORT` must be integer in range `1..65535`.
+- Non-loopback streamable HTTP bindings require explicit opt-in (`GCC_MCP_ALLOW_PUBLIC_HTTP=true`).
 
-6. CI security scanning:
+6. Structured audit logging:
+- Optional JSONL audit logs can record tool invocations (`GCC_MCP_AUDIT_LOG`).
+- Sensitive-looking fields are redacted by default (`GCC_MCP_AUDIT_REDACT=true`).
+
+7. CI security scanning:
 - Bandit static analysis runs on Python source.
 - pip-audit checks runtime dependency constraints from `pyproject.toml`.
 

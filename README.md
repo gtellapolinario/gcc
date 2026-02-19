@@ -31,6 +31,12 @@ Run with streamable HTTP (planned for remote deployment, not default for v0.1):
 gcc-mcp --transport streamable-http --host 127.0.0.1 --port 8000
 ```
 
+Explicit public binding (non-loopback host) requires opt-in:
+
+```bash
+gcc-mcp --transport streamable-http --host 0.0.0.0 --port 8000 --allow-public-http
+```
+
 Or (module mode):
 
 ```bash
@@ -109,6 +115,15 @@ Environment variable equivalents:
 - `GCC_MCP_TRANSPORT` (`stdio` or `streamable-http`)
 - `GCC_MCP_HOST`
 - `GCC_MCP_PORT`
+- `GCC_MCP_ALLOW_PUBLIC_HTTP` (`true/false`, default `false`)
+- `GCC_MCP_AUDIT_LOG` (optional JSONL audit log file path)
+- `GCC_MCP_AUDIT_REDACT` (`true/false`, default `true`)
+
+Optional audit log via CLI flag:
+
+```bash
+gcc-mcp --audit-log-file .GCC/server-audit.jsonl --audit-redact-sensitive
+```
 
 ## CI Quality Gates
 

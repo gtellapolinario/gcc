@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import argparse
 import logging
-from typing import Annotated, Any
+from pathlib import Path
+from typing import Annotated, Any, Callable
 
 from mcp.server.fastmcp import FastMCP
 from pydantic import Field, ValidationError
 
+from .audit import AuditLogger
 from .engine import GCCEngine
 from .errors import ErrorCode, GCCError
 from .models import (
@@ -19,7 +21,11 @@ from .models import (
     MergeRequest,
     StatusRequest,
 )
-from .runtime import get_runtime_defaults
+from .runtime import (
+    get_runtime_defaults,
+    get_runtime_security_defaults,
+    validate_streamable_http_binding,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +41,7 @@ mcp = FastMCP(
 )
 
 engine = GCCEngine()
+audit_logger = AuditLogger()
 
 READ_ONLY_TOOL_ANNOTATIONS = {
     "readOnlyHint": True,
@@ -98,6 +105,32 @@ def _error_payload_from_exception(exc: Exception) -> dict[str, Any]:
     return payload
 
 
+def _run_tool(
+    tool_name: str,
+    request_payload: dict[str, Any],
+    operation: Callable[[], dict[str, Any]],
+) -> dict[str, Any]:
+    """Execute tool operation and emit structured audit event."""
+    try:
+        response_payload = operation()
+        audit_logger.log_tool_event(
+            tool_name=tool_name,
+            status="success",
+            request_payload=request_payload,
+            response_payload=response_payload,
+        )
+        return response_payload
+    except Exception as exc:  # noqa: BLE001
+        error_payload = _error_payload_from_exception(exc)
+        audit_logger.log_tool_event(
+            tool_name=tool_name,
+            status="error",
+            request_payload=request_payload,
+            response_payload=error_payload,
+        )
+        return error_payload
+
+
 @_register_tool(WRITE_TOOL_ANNOTATIONS)
 def gcc_init(
     directory: Annotated[
@@ -134,7 +167,16 @@ def gcc_init(
     ] = False,
 ) -> dict[str, Any]:
     """Initialize GCC structure in a directory."""
-    try:
+    request_payload = {
+        "directory": directory,
+        "project_name": project_name,
+        "project_description": project_description,
+        "initial_goals": initial_goals or [],
+        "git_context_policy": git_context_policy,
+        "acknowledge_sensitive_data_risk": acknowledge_sensitive_data_risk,
+    }
+
+    def _operation() -> dict[str, Any]:
         request = InitRequest(
             directory=directory,
             project_name=project_name,
@@ -144,8 +186,8 @@ def gcc_init(
             acknowledge_sensitive_data_risk=acknowledge_sensitive_data_risk,
         )
         return engine.initialize(request).model_dump(mode="json")
-    except Exception as exc:  # noqa: BLE001
-        return _error_payload_from_exception(exc)
+
+    return _run_tool("gcc_init", request_payload=request_payload, operation=_operation)
 
 
 @_register_tool(WRITE_TOOL_ANNOTATIONS)
@@ -175,7 +217,19 @@ def gcc_commit(
     ] = None,
 ) -> dict[str, Any]:
     """Checkpoint meaningful progress and store milestone details."""
-    try:
+    request_payload = {
+        "directory": directory,
+        "message": message,
+        "commit_type": commit_type,
+        "details": details or [],
+        "files_modified": files_modified or [],
+        "tests_passed": tests_passed,
+        "notes": notes,
+        "tags": tags or [],
+        "ota_log": ota_log or {},
+    }
+
+    def _operation() -> dict[str, Any]:
         request = CommitRequest(
             directory=directory,
             message=message,
@@ -188,8 +242,8 @@ def gcc_commit(
             ota_log=ota_log,
         )
         return engine.commit(request).model_dump(mode="json")
-    except Exception as exc:  # noqa: BLE001
-        return _error_payload_from_exception(exc)
+
+    return _run_tool("gcc_commit", request_payload=request_payload, operation=_operation)
 
 
 @_register_tool(WRITE_TOOL_ANNOTATIONS)
@@ -210,7 +264,16 @@ def gcc_branch(
     tags: Annotated[list[str] | None, Field(description="Tags for branch categorization")] = None,
 ) -> dict[str, Any]:
     """Create a branch to explore an alternative strategy."""
-    try:
+    request_payload = {
+        "directory": directory,
+        "name": name,
+        "description": description,
+        "from_branch": from_branch,
+        "copy_context": copy_context,
+        "tags": tags or [],
+    }
+
+    def _operation() -> dict[str, Any]:
         request = BranchRequest(
             directory=directory,
             name=name,
@@ -220,8 +283,8 @@ def gcc_branch(
             tags=tags or [],
         )
         return engine.branch(request).model_dump(mode="json")
-    except Exception as exc:  # noqa: BLE001
-        return _error_payload_from_exception(exc)
+
+    return _run_tool("gcc_branch", request_payload=request_payload, operation=_operation)
 
 
 @_register_tool(WRITE_TOOL_ANNOTATIONS)
@@ -234,7 +297,16 @@ def gcc_merge(
     update_roadmap: Annotated[bool, Field(description="Update roadmap notes in main.md")] = True,
 ) -> dict[str, Any]:
     """Merge a completed branch into a target branch."""
-    try:
+    request_payload = {
+        "directory": directory,
+        "source_branch": source_branch,
+        "target_branch": target_branch,
+        "summary": summary,
+        "keep_branch": keep_branch,
+        "update_roadmap": update_roadmap,
+    }
+
+    def _operation() -> dict[str, Any]:
         request = MergeRequest(
             directory=directory,
             source_branch=source_branch,
@@ -244,8 +316,8 @@ def gcc_merge(
             update_roadmap=update_roadmap,
         )
         return engine.merge(request).model_dump(mode="json")
-    except Exception as exc:  # noqa: BLE001
-        return _error_payload_from_exception(exc)
+
+    return _run_tool("gcc_merge", request_payload=request_payload, operation=_operation)
 
 
 @_register_tool(READ_ONLY_TOOL_ANNOTATIONS)
@@ -277,7 +349,17 @@ def gcc_context(
     ] = False,
 ) -> dict[str, Any]:
     """Retrieve context snapshots across branches."""
-    try:
+    request_payload = {
+        "directory": directory,
+        "level": level,
+        "scope": scope or [],
+        "since": since,
+        "tags": tags or [],
+        "format": format,
+        "redact_sensitive": redact_sensitive,
+    }
+
+    def _operation() -> dict[str, Any]:
         request = ContextRequest(
             directory=directory,
             level=level,
@@ -288,8 +370,8 @@ def gcc_context(
             redact_sensitive=redact_sensitive,
         )
         return engine.get_context(request).model_dump(mode="json")
-    except Exception as exc:  # noqa: BLE001
-        return _error_payload_from_exception(exc)
+
+    return _run_tool("gcc_context", request_payload=request_payload, operation=_operation)
 
 
 @_register_tool(READ_ONLY_TOOL_ANNOTATIONS)
@@ -297,11 +379,13 @@ def gcc_status(
     directory: Annotated[str, Field(description="Path to GCC-enabled directory")],
 ) -> dict[str, Any]:
     """Get a quick status summary for a GCC project."""
-    try:
+    request_payload = {"directory": directory}
+
+    def _operation() -> dict[str, Any]:
         request = StatusRequest(directory=directory)
         return engine.get_status(request).model_dump(mode="json")
-    except Exception as exc:  # noqa: BLE001
-        return _error_payload_from_exception(exc)
+
+    return _run_tool("gcc_status", request_payload=request_payload, operation=_operation)
 
 
 def main() -> None:
@@ -309,6 +393,11 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="GCC MCP server")
     try:
         transport_default, host_default, port_default = get_runtime_defaults()
+        (
+            allow_public_http_default,
+            audit_log_path_default,
+            audit_redact_default,
+        ) = get_runtime_security_defaults()
     except ValueError as exc:
         parser.error(str(exc))
     parser.add_argument(
@@ -328,7 +417,43 @@ def main() -> None:
         default=port_default,
         help="Port for streamable HTTP transport.",
     )
+    parser.add_argument(
+        "--allow-public-http",
+        action="store_true",
+        default=allow_public_http_default,
+        help=(
+            "Allow non-loopback streamable-http host binding. "
+            "Required for 0.0.0.0 or other public interface hosts."
+        ),
+    )
+    parser.add_argument(
+        "--audit-log-file",
+        default=audit_log_path_default,
+        help="Optional JSONL audit log path for MCP tool calls.",
+    )
+    parser.add_argument(
+        "--audit-redact-sensitive",
+        action=argparse.BooleanOptionalAction,
+        default=audit_redact_default,
+        help="Redact sensitive-looking fields in audit logs (default: enabled).",
+    )
     args = parser.parse_args()
+
+    try:
+        validate_streamable_http_binding(
+            transport=args.transport,
+            host=args.host,
+            allow_public_http=args.allow_public_http,
+        )
+    except ValueError as exc:
+        parser.error(str(exc))
+
+    global audit_logger
+    audit_path = str(args.audit_log_file).strip()
+    audit_logger = AuditLogger(
+        log_path=Path(audit_path) if audit_path else None,
+        redact_sensitive=bool(args.audit_redact_sensitive),
+    )
 
     if args.transport == "stdio":
         mcp.run()

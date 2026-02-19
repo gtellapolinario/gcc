@@ -30,6 +30,10 @@ This server implementation follows official MCP guidance from:
    - Branch filesystem resolution constrained to `.GCC/branches` root.
 10. Security quality gates:
    - CI runs Bandit static analysis and pip-audit dependency checks.
-11. Transport readiness:
+11. Transport exposure guardrails:
+   - Non-loopback streamable HTTP bindings require explicit operator opt-in.
+12. Operational auditability:
+   - MCP tool calls can be logged in structured JSONL with sensitive-field redaction.
+13. Transport readiness:
    - stdio default for local tooling.
    - streamable HTTP mode available behind startup flag.

@@ -10,6 +10,8 @@ This server implementation follows official MCP guidance from:
 
 1. Clear, action-oriented tool names:
    - `gcc_init`, `gcc_commit`, `gcc_branch`, `gcc_merge`, `gcc_context`, `gcc_status`
+   - `gcc_log`, `gcc_list`, `gcc_checkout`, `gcc_delete`
+   - `gcc_config_get`, `gcc_config_set`, `gcc_config_list`
 2. Strong input validation:
    - Pydantic request models and constrained tool parameters.
 3. Structured outputs:

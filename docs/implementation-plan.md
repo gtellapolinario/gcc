@@ -147,3 +147,32 @@ Execution items:
 3. Safer strict-profile secret sourcing (`audit-signing-key-file`; CLI key restrictions).
 4. Regression tests for verification and policy refinements.
 5. Audit verification runbook and key-rotation guidance.
+
+## v0.9 Multi-Key Audit Rotation and Verification (completed)
+
+Tracking:
+
+- Milestone: `GCC MCP v0.9 - Multi-Key Audit Rotation and Verification`
+- Issue: `#22 v0.9 Execution: multi-key audit rotation and verification`
+
+Delivered items:
+
+1. Runtime/server support for optional audit signing key IDs.
+2. Signed events persist `event_signing_key_id`.
+3. CLI + verifier support keyring-based rotated-key verification.
+4. Backward-compatible mixed legacy/key-id verification behavior.
+5. Regression tests and docs updates for rotation rollout and verification workflows.
+
+## v1.0 MCP Tool Surface Completeness and Parity (in progress)
+
+Tracking:
+
+- Milestone: `GCC MCP v1.0 - MCP Tool Surface Completeness and Parity`
+- Issue: `#24 v1.0 Execution: MCP tool-surface completeness and parity`
+
+Execution items:
+
+1. Expand MCP tool surface for branch operations, config operations, and history/list read paths.
+2. Keep stable error contract and runtime guardrails across expanded tool set.
+3. Add regression tests for new tool flows and edge cases.
+4. Refresh docs/mapping/evaluation artifacts after tool expansion.

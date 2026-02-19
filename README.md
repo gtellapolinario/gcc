@@ -9,6 +9,13 @@ It implements Git-inspired context operations for AI-agent workflows:
 - `gcc_merge`
 - `gcc_context`
 - `gcc_status`
+- `gcc_log`
+- `gcc_list`
+- `gcc_checkout`
+- `gcc_delete`
+- `gcc_config_get`
+- `gcc_config_set`
+- `gcc_config_list`
 
 ## Quick Start
 

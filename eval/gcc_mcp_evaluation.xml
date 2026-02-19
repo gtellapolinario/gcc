@@ -1,7 +1,7 @@
 <evaluation>
   <qa_pair>
     <question>How many MCP tools are implemented by this GCC server?</question>
-    <answer>6</answer>
+    <answer>13</answer>
   </qa_pair>
   <qa_pair>
     <question>What is the default git context policy during GCC initialization?</question>

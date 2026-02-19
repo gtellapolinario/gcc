@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import logging
 import sys
+from datetime import date
 from pathlib import Path
 from typing import Annotated, Any, Callable
 
@@ -54,8 +55,10 @@ mcp = FastMCP(
     name="git-context-controller",
     instructions=(
         "Manage AI agent project context with Git-inspired operations. "
-        "Use gcc_init, gcc_commit, gcc_branch, gcc_merge, gcc_context, and gcc_status "
-        "to checkpoint work, explore alternatives, and recover structured history."
+        "Use gcc_init, gcc_commit, gcc_branch, gcc_merge, gcc_context, gcc_status, "
+        "gcc_log, gcc_list, gcc_checkout, gcc_delete, gcc_config_get, "
+        "gcc_config_set, and gcc_config_list to checkpoint work, explore alternatives, "
+        "operate branches, and recover structured history."
     ),
     version="0.1.0",
     json_response=True,
@@ -76,6 +79,13 @@ WRITE_TOOL_ANNOTATIONS = {
     "readOnlyHint": False,
     "idempotentHint": False,
     "destructiveHint": False,
+    "openWorldHint": False,
+}
+
+DESTRUCTIVE_WRITE_TOOL_ANNOTATIONS = {
+    "readOnlyHint": False,
+    "idempotentHint": False,
+    "destructiveHint": True,
     "openWorldHint": False,
 }
 
@@ -424,6 +434,230 @@ def gcc_status(
         return engine.get_status(request).model_dump(mode="json")
 
     return _run_tool("gcc_status", request_payload=request_payload, operation=_operation)
+
+
+@_register_tool(READ_ONLY_TOOL_ANNOTATIONS)
+def gcc_config_list(
+    directory: Annotated[str, Field(description="Path to GCC-enabled directory")],
+) -> dict[str, Any]:
+    """List GCC configuration values."""
+    request_payload = {"directory": directory}
+
+    def _operation() -> dict[str, Any]:
+        return {
+            "status": "success",
+            "message": "Config listed",
+            "config": engine.get_config(directory),
+        }
+
+    return _run_tool("gcc_config_list", request_payload=request_payload, operation=_operation)
+
+
+@_register_tool(READ_ONLY_TOOL_ANNOTATIONS)
+def gcc_config_get(
+    directory: Annotated[str, Field(description="Path to GCC-enabled directory")],
+    key: Annotated[str, Field(min_length=1, description="Configuration key to fetch")],
+) -> dict[str, Any]:
+    """Retrieve one GCC configuration value."""
+    request_payload = {"directory": directory, "key": key}
+
+    def _operation() -> dict[str, Any]:
+        config = engine.get_config(directory)
+        return {
+            "status": "success",
+            "message": "Config value retrieved",
+            "key": key,
+            "value": config.get(key),
+        }
+
+    return _run_tool("gcc_config_get", request_payload=request_payload, operation=_operation)
+
+
+@_register_tool(WRITE_TOOL_ANNOTATIONS)
+def gcc_config_set(
+    directory: Annotated[str, Field(description="Path to GCC-enabled directory")],
+    key: Annotated[str, Field(min_length=1, description="Mutable configuration key")],
+    value: Annotated[
+        bool | int | float | str,
+        Field(description="Configuration value to set"),
+    ],
+) -> dict[str, Any]:
+    """Set a mutable GCC configuration value."""
+    request_payload = {"directory": directory, "key": key, "value": value}
+
+    def _operation() -> dict[str, Any]:
+        updated = engine.set_config(directory, key, value)
+        return {
+            "status": "success",
+            "message": f"Config key '{key}' updated",
+            "config": updated,
+        }
+
+    return _run_tool("gcc_config_set", request_payload=request_payload, operation=_operation)
+
+
+@_register_tool(READ_ONLY_TOOL_ANNOTATIONS)
+def gcc_list(
+    directory: Annotated[str, Field(description="Path to GCC-enabled directory")],
+    active_only: Annotated[
+        bool,
+        Field(description="Return only active branches"),
+    ] = False,
+    archived_only: Annotated[
+        bool,
+        Field(description="Return only archived/abandoned branches"),
+    ] = False,
+    tags: Annotated[
+        list[str] | None,
+        Field(description="Optional branch tag filters"),
+    ] = None,
+) -> dict[str, Any]:
+    """List GCC branches with optional filters."""
+    request_payload = {
+        "directory": directory,
+        "active_only": active_only,
+        "archived_only": archived_only,
+        "tags": tags or [],
+    }
+
+    def _operation() -> dict[str, Any]:
+        return engine.list_branches(
+            directory=directory,
+            active_only=active_only,
+            archived_only=archived_only,
+            tags=tags or [],
+        )
+
+    return _run_tool("gcc_list", request_payload=request_payload, operation=_operation)
+
+
+@_register_tool(READ_ONLY_TOOL_ANNOTATIONS)
+def gcc_log(
+    directory: Annotated[str, Field(description="Path to GCC-enabled directory")],
+    branch: Annotated[
+        str | None,
+        Field(description="Branch name (defaults to current branch)"),
+    ] = None,
+    limit: Annotated[
+        int,
+        Field(ge=0, description="Maximum entries (0 keeps all matched entries)"),
+    ] = 20,
+    since: Annotated[
+        str | None,
+        Field(description="Optional date filter in YYYY-MM-DD format"),
+    ] = None,
+    commit_type: Annotated[
+        str | None,
+        Field(description="Optional type filter: feature, bugfix, refactor, test, docs, chore, merge"),
+    ] = None,
+    tags: Annotated[
+        list[str] | None,
+        Field(description="Optional tag filters"),
+    ] = None,
+) -> dict[str, Any]:
+    """Retrieve commit history for a branch."""
+    request_payload = {
+        "directory": directory,
+        "branch": branch,
+        "limit": limit,
+        "since": since,
+        "commit_type": commit_type,
+        "tags": tags or [],
+    }
+
+    def _operation() -> dict[str, Any]:
+        since_date: date | None = None
+        if since:
+            try:
+                since_date = date.fromisoformat(since)
+            except ValueError as exc:
+                raise GCCError(
+                    ErrorCode.INVALID_INPUT,
+                    "Invalid since date format.",
+                    "Use YYYY-MM-DD.",
+                ) from exc
+
+        allowed_types = {"feature", "bugfix", "refactor", "test", "docs", "chore", "merge"}
+        normalized_commit_type = str(commit_type).strip() if commit_type else ""
+        if normalized_commit_type and normalized_commit_type not in allowed_types:
+            raise GCCError(
+                ErrorCode.INVALID_INPUT,
+                "Invalid commit_type filter.",
+                "Use one of: feature, bugfix, refactor, test, docs, chore, merge.",
+            )
+
+        return engine.get_log(
+            directory=directory,
+            branch_name=branch,
+            limit=limit,
+            since=since_date,
+            commit_type=normalized_commit_type or None,
+            tags=tags or [],
+        )
+
+    return _run_tool("gcc_log", request_payload=request_payload, operation=_operation)
+
+
+@_register_tool(WRITE_TOOL_ANNOTATIONS)
+def gcc_checkout(
+    directory: Annotated[str, Field(description="Path to GCC-enabled directory")],
+    branch: Annotated[
+        str,
+        Field(
+            min_length=1,
+            max_length=50,
+            pattern=r"^[a-z0-9-]+$",
+            description="Branch name to make current",
+        ),
+    ],
+) -> dict[str, Any]:
+    """Switch the active GCC branch."""
+    request_payload = {"directory": directory, "branch": branch}
+
+    def _operation() -> dict[str, Any]:
+        return engine.checkout_branch(directory, branch)
+
+    return _run_tool("gcc_checkout", request_payload=request_payload, operation=_operation)
+
+
+@_register_tool(DESTRUCTIVE_WRITE_TOOL_ANNOTATIONS)
+def gcc_delete(
+    directory: Annotated[str, Field(description="Path to GCC-enabled directory")],
+    branch: Annotated[
+        str,
+        Field(
+            min_length=1,
+            max_length=50,
+            pattern=r"^[a-z0-9-]+$",
+            description="Branch name to archive/delete",
+        ),
+    ],
+    force: Annotated[
+        bool,
+        Field(description="Permanently delete branch directory"),
+    ] = False,
+    archive: Annotated[
+        bool,
+        Field(description="Mark branch as archived/abandoned"),
+    ] = False,
+) -> dict[str, Any]:
+    """Archive or force-delete a GCC branch."""
+    request_payload = {
+        "directory": directory,
+        "branch": branch,
+        "force": force,
+        "archive": archive,
+    }
+
+    def _operation() -> dict[str, Any]:
+        return engine.delete_branch(
+            directory=directory,
+            branch_name=branch,
+            force=force,
+            archive=archive,
+        )
+
+    return _run_tool("gcc_delete", request_payload=request_payload, operation=_operation)
 
 
 def _configure_fastmcp_auth(auth_defaults: RuntimeAuthDefaults, host: str, port: int) -> None:

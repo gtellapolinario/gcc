@@ -100,3 +100,19 @@ Execution items:
 3. Runtime parsing/validation for operational control settings.
 4. Regression tests for limiter behavior and runtime/audit edge cases.
 5. Deployment/security docs updates for operational controls.
+
+## v0.6 Remote AuthN/AuthZ and Deployment Profiles (in progress)
+
+Tracking:
+
+- Milestone: `GCC MCP v0.6 - Remote AuthN/AuthZ and Deployment Profiles`
+- Issue: `#16 v0.6 Execution: remote authn/authz + deployment profiles (Envoy)`
+
+Execution items:
+
+1. Runtime auth mode framework (`off`, `token`, `trusted-proxy-header`, `oauth2`).
+2. FastMCP auth wiring for static token and OAuth2 introspection verification.
+3. Trusted proxy header enforcement middleware for streamable HTTP mode.
+4. Auth + transport validation hardening and metadata URL controls.
+5. Deployment/security docs updates with Envoy-based remote profile guidance.
+6. Regression tests for auth runtime parsing/validation and URL resolution.

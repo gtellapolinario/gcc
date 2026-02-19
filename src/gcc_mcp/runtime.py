@@ -3,11 +3,34 @@
 from __future__ import annotations
 
 import ipaddress
+import math
 import os
+import re
+from dataclasses import dataclass
 from collections.abc import Mapping
+from urllib.parse import urlparse
 
 TRUE_VALUES = {"1", "true", "yes", "on"}
 FALSE_VALUES = {"0", "false", "no", "off"}
+AUTH_MODES = {"off", "token", "trusted-proxy-header", "oauth2"}
+TRUSTED_PROXY_HEADER_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9-]{0,127}$")
+
+
+@dataclass(frozen=True)
+class RuntimeAuthDefaults:
+    """Runtime auth settings sourced from environment variables or CLI."""
+
+    auth_mode: str
+    auth_token: str
+    trusted_proxy_header: str
+    trusted_proxy_value: str
+    oauth2_introspection_url: str
+    oauth2_client_id: str
+    oauth2_client_secret: str
+    oauth2_introspection_timeout_seconds: float
+    auth_issuer_url: str
+    auth_resource_server_url: str
+    auth_required_scopes: tuple[str, ...]
 
 
 def get_runtime_defaults(env: Mapping[str, str] | None = None) -> tuple[str, str, int]:
@@ -56,6 +79,36 @@ def get_runtime_security_defaults(env: Mapping[str, str] | None = None) -> tuple
     return allow_public_http_default, audit_log_path, audit_redact_sensitive
 
 
+def get_runtime_auth_defaults(env: Mapping[str, str] | None = None) -> RuntimeAuthDefaults:
+    """Return auth defaults from environment variables with type parsing."""
+    source = os.environ if env is None else env
+    auth_mode = source.get("GCC_MCP_AUTH_MODE", "off").strip().lower()
+    if auth_mode not in AUTH_MODES:
+        allowed_modes = ", ".join(sorted(AUTH_MODES))
+        raise ValueError(f"GCC_MCP_AUTH_MODE must be one of: {allowed_modes}.")
+
+    timeout_seconds = _parse_float_env(
+        source=source,
+        key="GCC_MCP_OAUTH2_INTROSPECTION_TIMEOUT_SECONDS",
+        default=5.0,
+        min_value=0.1,
+    )
+
+    return RuntimeAuthDefaults(
+        auth_mode=auth_mode,
+        auth_token=source.get("GCC_MCP_AUTH_TOKEN", "").strip(),
+        trusted_proxy_header=source.get("GCC_MCP_TRUSTED_PROXY_HEADER", "").strip(),
+        trusted_proxy_value=source.get("GCC_MCP_TRUSTED_PROXY_VALUE", "").strip(),
+        oauth2_introspection_url=source.get("GCC_MCP_OAUTH2_INTROSPECTION_URL", "").strip(),
+        oauth2_client_id=source.get("GCC_MCP_OAUTH2_CLIENT_ID", "").strip(),
+        oauth2_client_secret=source.get("GCC_MCP_OAUTH2_CLIENT_SECRET", "").strip(),
+        oauth2_introspection_timeout_seconds=timeout_seconds,
+        auth_issuer_url=source.get("GCC_MCP_AUTH_ISSUER_URL", "").strip(),
+        auth_resource_server_url=source.get("GCC_MCP_AUTH_RESOURCE_SERVER_URL", "").strip(),
+        auth_required_scopes=parse_csv_values(source.get("GCC_MCP_AUTH_REQUIRED_SCOPES", "")),
+    )
+
+
 def get_runtime_operations_defaults(env: Mapping[str, str] | None = None) -> tuple[int, int]:
     """Return validated operational guardrail settings from environment variables."""
     source = os.environ if env is None else env
@@ -86,6 +139,83 @@ def validate_runtime_operation_values(rate_limit_per_minute: int, audit_max_fiel
         raise ValueError("audit-max-field-chars must be 0 or >= 64.")
 
 
+def validate_runtime_auth_values(
+    transport: str,
+    auth_defaults: RuntimeAuthDefaults,
+) -> None:
+    """Validate runtime auth options after CLI+env merging."""
+    auth_mode = auth_defaults.auth_mode
+    if auth_mode not in AUTH_MODES:
+        allowed_modes = ", ".join(sorted(AUTH_MODES))
+        raise ValueError(f"auth-mode must be one of: {allowed_modes}.")
+
+    if auth_mode != "off" and transport != "streamable-http":
+        raise ValueError("auth-mode requires --transport streamable-http.")
+
+    if auth_mode == "off":
+        return
+
+    if auth_defaults.auth_issuer_url:
+        _validate_http_url(auth_defaults.auth_issuer_url, field_name="auth-issuer-url")
+    if auth_defaults.auth_resource_server_url:
+        _validate_http_url(
+            auth_defaults.auth_resource_server_url,
+            field_name="auth-resource-server-url",
+        )
+
+    if auth_mode == "token":
+        if not auth_defaults.auth_token.strip():
+            raise ValueError("auth-token must be set when auth-mode=token.")
+        return
+
+    if auth_mode == "trusted-proxy-header":
+        if not auth_defaults.trusted_proxy_header:
+            raise ValueError(
+                "trusted-proxy-header must be set when auth-mode=trusted-proxy-header."
+            )
+        if not TRUSTED_PROXY_HEADER_PATTERN.fullmatch(auth_defaults.trusted_proxy_header):
+            raise ValueError(
+                "trusted-proxy-header contains invalid characters. "
+                "Use letters, numbers, and hyphens only."
+            )
+        if not auth_defaults.trusted_proxy_value.strip():
+            raise ValueError("trusted-proxy-value must be set when auth-mode=trusted-proxy-header.")
+        return
+
+    if not auth_defaults.oauth2_introspection_url:
+        raise ValueError("oauth2-introspection-url must be set when auth-mode=oauth2.")
+    _validate_http_url(
+        auth_defaults.oauth2_introspection_url,
+        field_name="oauth2-introspection-url",
+    )
+    if auth_defaults.oauth2_introspection_timeout_seconds <= 0:
+        raise ValueError("oauth2-introspection-timeout-seconds must be > 0.")
+    has_client_id = bool(auth_defaults.oauth2_client_id)
+    has_client_secret = bool(auth_defaults.oauth2_client_secret)
+    if has_client_id != has_client_secret:
+        raise ValueError(
+            "oauth2-client-id and oauth2-client-secret must be provided together."
+        )
+
+
+def resolve_auth_metadata_urls(
+    auth_defaults: RuntimeAuthDefaults,
+    host: str,
+    port: int,
+    streamable_http_path: str,
+) -> tuple[str, str]:
+    """Resolve auth metadata URLs, deriving safe defaults when omitted."""
+    resource_server_url = auth_defaults.auth_resource_server_url or build_http_base_url(
+        host=host,
+        port=port,
+        path=streamable_http_path,
+    )
+    issuer_url = auth_defaults.auth_issuer_url or resource_server_url
+    _validate_http_url(issuer_url, field_name="auth-issuer-url")
+    _validate_http_url(resource_server_url, field_name="auth-resource-server-url")
+    return issuer_url, resource_server_url
+
+
 def validate_streamable_http_binding(transport: str, host: str, allow_public_http: bool) -> None:
     """Validate host exposure policy for streamable HTTP transport."""
     if transport != "streamable-http":
@@ -108,6 +238,26 @@ def is_loopback_host(host: str) -> bool:
         return ipaddress.ip_address(normalized).is_loopback
     except ValueError:
         return False
+
+
+def parse_csv_values(value: str | None) -> tuple[str, ...]:
+    """Parse comma-separated values into a normalized tuple."""
+    if not value:
+        return ()
+    return tuple(part.strip() for part in value.split(",") if part.strip())
+
+
+def build_http_base_url(host: str, port: int, path: str) -> str:
+    """Build an HTTP URL from host/port/path, handling IPv6 host formatting."""
+    normalized_host = host.strip()
+    if ":" in normalized_host and not normalized_host.startswith("["):
+        normalized_host = f"[{normalized_host}]"
+
+    normalized_path = path.strip() or "/"
+    if not normalized_path.startswith("/"):
+        normalized_path = f"/{normalized_path}"
+
+    return f"http://{normalized_host}:{port}{normalized_path}"
 
 
 def _parse_bool_env(source: Mapping[str, str], key: str, default: bool) -> bool:
@@ -138,3 +288,29 @@ def _parse_int_env(
     if min_value is not None and parsed < min_value:
         raise ValueError(f"{key} must be >= {min_value}.")
     return parsed
+
+
+def _parse_float_env(
+    source: Mapping[str, str],
+    key: str,
+    default: float,
+    min_value: float | None = None,
+) -> float:
+    raw = source.get(key)
+    if raw is None or not str(raw).strip():
+        return default
+    try:
+        parsed = float(str(raw).strip())
+    except ValueError as exc:
+        raise ValueError(f"{key} must be a number.") from exc
+    if not math.isfinite(parsed):
+        raise ValueError(f"{key} must be a finite number.")
+    if min_value is not None and parsed < min_value:
+        raise ValueError(f"{key} must be >= {min_value}.")
+    return parsed
+
+
+def _validate_http_url(value: str, field_name: str) -> None:
+    parsed = urlparse(value.strip())
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise ValueError(f"{field_name} must be a valid http(s) URL.")

@@ -7,9 +7,15 @@ import logging
 from pathlib import Path
 from typing import Annotated, Any, Callable
 
+from mcp.server.auth.settings import AuthSettings
 from mcp.server.fastmcp import FastMCP
 from pydantic import Field, ValidationError
 
+from .auth import (
+    OAuth2IntrospectionTokenVerifier,
+    StaticTokenVerifier,
+    TrustedProxyHeaderMiddleware,
+)
 from .audit import AuditLogger
 from .engine import GCCEngine
 from .errors import ErrorCode, GCCError
@@ -23,9 +29,15 @@ from .models import (
     StatusRequest,
 )
 from .runtime import (
+    AUTH_MODES,
+    RuntimeAuthDefaults,
     get_runtime_defaults,
+    get_runtime_auth_defaults,
     get_runtime_operations_defaults,
+    parse_csv_values,
+    resolve_auth_metadata_urls,
     get_runtime_security_defaults,
+    validate_runtime_auth_values,
     validate_runtime_operation_values,
     validate_streamable_http_binding,
 )
@@ -408,6 +420,71 @@ def gcc_status(
     return _run_tool("gcc_status", request_payload=request_payload, operation=_operation)
 
 
+def _configure_fastmcp_auth(auth_defaults: RuntimeAuthDefaults, host: str, port: int) -> None:
+    """Apply auth settings to the global FastMCP instance."""
+    mcp.settings.host = host
+    mcp.settings.port = port
+
+    if auth_defaults.auth_mode == "off":
+        mcp.settings.auth = None
+        setattr(mcp, "_token_verifier", None)
+        return
+
+    if auth_defaults.auth_mode == "trusted-proxy-header":
+        mcp.settings.auth = None
+        setattr(mcp, "_token_verifier", None)
+        return
+
+    issuer_url, resource_server_url = resolve_auth_metadata_urls(
+        auth_defaults=auth_defaults,
+        host=host,
+        port=port,
+        streamable_http_path=mcp.settings.streamable_http_path,
+    )
+    mcp.settings.auth = AuthSettings(
+        issuer_url=issuer_url,
+        resource_server_url=resource_server_url,
+        required_scopes=list(auth_defaults.auth_required_scopes) or None,
+    )
+
+    if auth_defaults.auth_mode == "token":
+        token_verifier = StaticTokenVerifier(
+            expected_token=auth_defaults.auth_token,
+            scopes=list(auth_defaults.auth_required_scopes),
+        )
+    else:
+        token_verifier = OAuth2IntrospectionTokenVerifier(
+            introspection_url=auth_defaults.oauth2_introspection_url,
+            timeout_seconds=auth_defaults.oauth2_introspection_timeout_seconds,
+            client_id=auth_defaults.oauth2_client_id,
+            client_secret=auth_defaults.oauth2_client_secret,
+            required_scopes=list(auth_defaults.auth_required_scopes),
+        )
+
+    setattr(mcp, "_token_verifier", token_verifier)
+
+
+def _run_streamable_http_with_proxy_header_auth(
+    header_name: str,
+    header_value: str,
+) -> None:
+    """Run streamable HTTP with trusted-proxy header validation middleware."""
+    import uvicorn
+
+    wrapped_app = TrustedProxyHeaderMiddleware(
+        app=mcp.streamable_http_app(),
+        header_name=header_name,
+        expected_value=header_value,
+    )
+    config = uvicorn.Config(
+        wrapped_app,
+        host=mcp.settings.host,
+        port=mcp.settings.port,
+        log_level=mcp.settings.log_level.lower(),
+    )
+    uvicorn.Server(config).run()
+
+
 def main() -> None:
     """Run GCC MCP server in stdio or streamable HTTP mode."""
     parser = argparse.ArgumentParser(description="GCC MCP server")
@@ -419,6 +496,7 @@ def main() -> None:
             audit_redact_default,
         ) = get_runtime_security_defaults()
         rate_limit_default, audit_max_field_chars_default = get_runtime_operations_defaults()
+        auth_defaults = get_runtime_auth_defaults()
     except ValueError as exc:
         parser.error(str(exc))
     parser.add_argument(
@@ -470,7 +548,89 @@ def main() -> None:
         default=audit_max_field_chars_default,
         help="Max characters for each string field written to audit logs.",
     )
+    parser.add_argument(
+        "--auth-mode",
+        choices=sorted(AUTH_MODES),
+        default=auth_defaults.auth_mode,
+        help=(
+            "Authentication mode for streamable HTTP: "
+            "off, token, trusted-proxy-header, oauth2."
+        ),
+    )
+    parser.add_argument(
+        "--auth-token",
+        default=auth_defaults.auth_token,
+        help=(
+            "Static bearer token for auth-mode=token. "
+            "Prefer GCC_MCP_AUTH_TOKEN environment variable for secrets."
+        ),
+    )
+    parser.add_argument(
+        "--trusted-proxy-header",
+        default=auth_defaults.trusted_proxy_header,
+        help="Header name required when auth-mode=trusted-proxy-header.",
+    )
+    parser.add_argument(
+        "--trusted-proxy-value",
+        default=auth_defaults.trusted_proxy_value,
+        help=(
+            "Expected trusted proxy header value for auth-mode=trusted-proxy-header. "
+            "Prefer GCC_MCP_TRUSTED_PROXY_VALUE environment variable."
+        ),
+    )
+    parser.add_argument(
+        "--oauth2-introspection-url",
+        default=auth_defaults.oauth2_introspection_url,
+        help="OAuth2 token introspection endpoint for auth-mode=oauth2.",
+    )
+    parser.add_argument(
+        "--oauth2-client-id",
+        default=auth_defaults.oauth2_client_id,
+        help="Client ID used for OAuth2 token introspection auth (optional).",
+    )
+    parser.add_argument(
+        "--oauth2-client-secret",
+        default=auth_defaults.oauth2_client_secret,
+        help=(
+            "Client secret used for OAuth2 introspection auth (optional). "
+            "Prefer GCC_MCP_OAUTH2_CLIENT_SECRET environment variable."
+        ),
+    )
+    parser.add_argument(
+        "--oauth2-introspection-timeout-seconds",
+        type=float,
+        default=auth_defaults.oauth2_introspection_timeout_seconds,
+        help="Timeout in seconds for OAuth2 introspection requests.",
+    )
+    parser.add_argument(
+        "--auth-issuer-url",
+        default=auth_defaults.auth_issuer_url,
+        help="Issuer URL advertised in MCP auth metadata (optional).",
+    )
+    parser.add_argument(
+        "--auth-resource-server-url",
+        default=auth_defaults.auth_resource_server_url,
+        help="Resource server URL advertised in MCP auth metadata (optional).",
+    )
+    parser.add_argument(
+        "--auth-required-scopes",
+        default=",".join(auth_defaults.auth_required_scopes),
+        help="Comma-separated required OAuth scopes for streamable HTTP auth.",
+    )
     args = parser.parse_args()
+    runtime_auth = RuntimeAuthDefaults(
+        auth_mode=args.auth_mode,
+        auth_token=str(args.auth_token).strip(),
+        trusted_proxy_header=str(args.trusted_proxy_header).strip(),
+        trusted_proxy_value=str(args.trusted_proxy_value).strip(),
+        oauth2_introspection_url=str(args.oauth2_introspection_url).strip(),
+        oauth2_client_id=str(args.oauth2_client_id).strip(),
+        oauth2_client_secret=args.oauth2_client_secret,
+        oauth2_introspection_timeout_seconds=float(args.oauth2_introspection_timeout_seconds),
+        auth_issuer_url=str(args.auth_issuer_url).strip(),
+        auth_resource_server_url=str(args.auth_resource_server_url).strip(),
+        auth_required_scopes=parse_csv_values(args.auth_required_scopes),
+    )
 
     try:
         validate_streamable_http_binding(
@@ -481,6 +641,10 @@ def main() -> None:
         validate_runtime_operation_values(
             rate_limit_per_minute=args.rate_limit_per_minute,
             audit_max_field_chars=args.audit_max_field_chars,
+        )
+        validate_runtime_auth_values(
+            transport=args.transport,
+            auth_defaults=runtime_auth,
         )
     except ValueError as exc:
         parser.error(str(exc))
@@ -494,12 +658,24 @@ def main() -> None:
         max_field_chars=int(args.audit_max_field_chars),
     )
     rate_limiter.configure(int(args.rate_limit_per_minute))
+    _configure_fastmcp_auth(
+        auth_defaults=runtime_auth,
+        host=args.host,
+        port=int(args.port),
+    )
 
     if args.transport == "stdio":
         mcp.run()
         return
 
-    mcp.run(transport="streamable-http", host=args.host, port=args.port)
+    if runtime_auth.auth_mode == "trusted-proxy-header":
+        _run_streamable_http_with_proxy_header_auth(
+            header_name=runtime_auth.trusted_proxy_header,
+            header_value=runtime_auth.trusted_proxy_value,
+        )
+        return
+
+    mcp.run(transport="streamable-http")
 
 
 if __name__ == "__main__":

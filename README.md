@@ -109,11 +109,36 @@ gcc-cli config redaction_mode true
 
 ## Streamable HTTP Mode
 
-`gcc-mcp` remains stdio-first for v0.1/v0.2 local workflows.  
+`gcc-mcp` remains stdio-first for local workflows.  
 For remote-style testing/deployment, streamable HTTP mode is available:
 
 ```bash
 gcc-mcp --transport streamable-http --host 127.0.0.1 --port 8000
+```
+
+Supported HTTP auth modes:
+
+- `off` (default)
+- `token`
+- `trusted-proxy-header`
+- `oauth2`
+
+Examples:
+
+```bash
+# static bearer token
+gcc-mcp --transport streamable-http --auth-mode token --auth-token 'replace-me'
+
+# trusted reverse-proxy header (Envoy profile)
+gcc-mcp --transport streamable-http --auth-mode trusted-proxy-header \
+  --trusted-proxy-header x-gcc-proxy-auth \
+  --trusted-proxy-value 'replace-me'
+
+# OAuth2 introspection
+gcc-mcp --transport streamable-http --auth-mode oauth2 \
+  --oauth2-introspection-url https://auth.example.com/oauth2/introspect \
+  --oauth2-client-id gcc-mcp \
+  --oauth2-client-secret 'replace-me'
 ```
 
 Environment variable equivalents:
@@ -126,6 +151,20 @@ Environment variable equivalents:
 - `GCC_MCP_AUDIT_REDACT` (`true/false`, default `true`)
 - `GCC_MCP_RATE_LIMIT_PER_MINUTE` (integer, default `0` = disabled)
 - `GCC_MCP_AUDIT_MAX_FIELD_CHARS` (integer, default `4000`; `0` disables truncation)
+- `GCC_MCP_AUTH_MODE` (`off`, `token`, `trusted-proxy-header`, `oauth2`)
+- `GCC_MCP_AUTH_TOKEN`
+- `GCC_MCP_TRUSTED_PROXY_HEADER`
+- `GCC_MCP_TRUSTED_PROXY_VALUE`
+- `GCC_MCP_OAUTH2_INTROSPECTION_URL`
+- `GCC_MCP_OAUTH2_CLIENT_ID`
+- `GCC_MCP_OAUTH2_CLIENT_SECRET`
+- `GCC_MCP_OAUTH2_INTROSPECTION_TIMEOUT_SECONDS` (default `5.0`)
+- `GCC_MCP_AUTH_REQUIRED_SCOPES` (comma-separated)
+- `GCC_MCP_AUTH_ISSUER_URL` (optional metadata override)
+- `GCC_MCP_AUTH_RESOURCE_SERVER_URL` (optional metadata override)
+
+For production remote deployments, place `gcc-mcp` behind Envoy and enforce TLS, policy,
+and network controls at the proxy layer (`docs/deployment.md`).
 
 Optional audit log via CLI flag:
 

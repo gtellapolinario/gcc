@@ -38,27 +38,36 @@ Primary trust boundaries:
 - `GCC_MCP_TRANSPORT` only permits `stdio` or `streamable-http`.
 - `GCC_MCP_PORT` must be integer in range `1..65535`.
 - Non-loopback streamable HTTP bindings require explicit opt-in (`GCC_MCP_ALLOW_PUBLIC_HTTP=true`).
+- HTTP auth modes are validated and constrained (`off`, `token`, `trusted-proxy-header`, `oauth2`).
+- Non-`off` auth modes require `streamable-http` transport.
 
-6. Structured audit logging:
+6. HTTP auth controls:
+- `token` mode enforces static bearer-token validation.
+- `trusted-proxy-header` mode enforces a required pre-shared proxy header.
+- `oauth2` mode validates bearer tokens via OAuth2 introspection.
+- Auth metadata URLs/scopes are configurable for interoperability.
+
+7. Structured audit logging:
 - Optional JSONL audit logs can record tool invocations (`GCC_MCP_AUDIT_LOG`).
 - Sensitive-looking fields are redacted by default (`GCC_MCP_AUDIT_REDACT=true`).
 - Audit log fields are truncated with configurable limits (`GCC_MCP_AUDIT_MAX_FIELD_CHARS`).
 
-7. Operational guardrails:
+8. Operational guardrails:
 - Optional per-process tool-call rate limiting (`GCC_MCP_RATE_LIMIT_PER_MINUTE`).
 - Rate limiting returns explicit `RATE_LIMITED` error payloads with retry hints.
 
-8. CI security scanning:
+9. CI security scanning:
 - Bandit static analysis runs on Python source.
 - pip-audit checks runtime dependency constraints from `pyproject.toml`.
 
 ## Deployment Notes
 
 - `stdio` is the default transport for local integration.
-- `streamable-http` is available for remote/test setups but must be protected by network controls (private network, firewall, proxy auth/rate limits).
+- `streamable-http` is available for remote/test setups but must be protected by network controls (private network, firewall, Envoy policies, auth/rate limits).
 
 ## Residual Risks and Backlog
 
-- Remote mode currently relies on external authn/authz controls.
+- Trusted proxy header mode depends on correct reverse-proxy behavior (strip/overwrite header from external clients).
+- OAuth2 introspection availability/latency can affect request authorization outcomes.
 - Redaction is heuristic and should not be treated as formal secret detection.
 - Add optional signed audit trails and stricter policy enforcement for production remote deployments.

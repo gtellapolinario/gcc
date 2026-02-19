@@ -3,10 +3,16 @@ from __future__ import annotations
 import pytest
 
 from gcc_mcp.runtime import (
+    RuntimeAuthDefaults,
+    build_http_base_url,
+    get_runtime_auth_defaults,
     get_runtime_defaults,
     get_runtime_operations_defaults,
     get_runtime_security_defaults,
     is_loopback_host,
+    parse_csv_values,
+    resolve_auth_metadata_urls,
+    validate_runtime_auth_values,
     validate_runtime_operation_values,
     validate_streamable_http_binding,
 )
@@ -184,3 +190,194 @@ def test_validate_streamable_http_binding(
 )
 def test_is_loopback_host(host: str, is_loopback: bool) -> None:
     assert is_loopback_host(host) is is_loopback
+
+
+def _auth_defaults(**overrides) -> RuntimeAuthDefaults:
+    payload = {
+        "auth_mode": "off",
+        "auth_token": "",
+        "trusted_proxy_header": "",
+        "trusted_proxy_value": "",
+        "oauth2_introspection_url": "",
+        "oauth2_client_id": "",
+        "oauth2_client_secret": "",
+        "oauth2_introspection_timeout_seconds": 5.0,
+        "auth_issuer_url": "",
+        "auth_resource_server_url": "",
+        "auth_required_scopes": (),
+    }
+    payload.update(overrides)
+    return RuntimeAuthDefaults(**payload)
+
+
+def test_runtime_auth_defaults_parsing() -> None:
+    defaults = get_runtime_auth_defaults(
+        env={
+            "GCC_MCP_AUTH_MODE": "oauth2",
+            "GCC_MCP_OAUTH2_INTROSPECTION_URL": "https://auth.example.com/introspect",
+            "GCC_MCP_OAUTH2_CLIENT_ID": "gcc-client",
+            "GCC_MCP_OAUTH2_CLIENT_SECRET": " top-secret ",
+            "GCC_MCP_OAUTH2_INTROSPECTION_TIMEOUT_SECONDS": "9.5",
+            "GCC_MCP_AUTH_REQUIRED_SCOPES": "gcc.read,gcc.write",
+        }
+    )
+    assert defaults.auth_mode == "oauth2"
+    assert defaults.oauth2_introspection_url == "https://auth.example.com/introspect"
+    assert defaults.oauth2_client_id == "gcc-client"
+    assert defaults.oauth2_client_secret == "top-secret"
+    assert defaults.oauth2_introspection_timeout_seconds == pytest.approx(9.5)
+    assert defaults.auth_required_scopes == ("gcc.read", "gcc.write")
+
+
+def test_runtime_auth_defaults_invalid_mode() -> None:
+    with pytest.raises(ValueError):
+        get_runtime_auth_defaults(env={"GCC_MCP_AUTH_MODE": "jwt"})
+
+
+@pytest.mark.parametrize("timeout", ["nan", "inf", "-inf"])
+def test_runtime_auth_defaults_rejects_non_finite_timeout(timeout: str) -> None:
+    with pytest.raises(ValueError):
+        get_runtime_auth_defaults(
+            env={
+                "GCC_MCP_AUTH_MODE": "oauth2",
+                "GCC_MCP_OAUTH2_INTROSPECTION_URL": "https://auth.example.com/introspect",
+                "GCC_MCP_OAUTH2_INTROSPECTION_TIMEOUT_SECONDS": timeout,
+            }
+        )
+
+
+def test_validate_runtime_auth_values_off_mode_accepts_stdio() -> None:
+    validate_runtime_auth_values(
+        transport="stdio",
+        auth_defaults=_auth_defaults(auth_mode="off"),
+    )
+
+
+def test_validate_runtime_auth_values_token_mode() -> None:
+    with pytest.raises(ValueError):
+        validate_runtime_auth_values(
+            transport="stdio",
+            auth_defaults=_auth_defaults(auth_mode="token", auth_token="shared"),
+        )
+
+    with pytest.raises(ValueError):
+        validate_runtime_auth_values(
+            transport="streamable-http",
+            auth_defaults=_auth_defaults(auth_mode="token"),
+        )
+
+    validate_runtime_auth_values(
+        transport="streamable-http",
+        auth_defaults=_auth_defaults(auth_mode="token", auth_token="shared"),
+    )
+
+
+def test_validate_runtime_auth_values_trusted_proxy_header_mode() -> None:
+    with pytest.raises(ValueError):
+        validate_runtime_auth_values(
+            transport="streamable-http",
+            auth_defaults=_auth_defaults(
+                auth_mode="trusted-proxy-header",
+                trusted_proxy_header="",
+                trusted_proxy_value="token",
+            ),
+        )
+
+    with pytest.raises(ValueError):
+        validate_runtime_auth_values(
+            transport="streamable-http",
+            auth_defaults=_auth_defaults(
+                auth_mode="trusted-proxy-header",
+                trusted_proxy_header="x_bad/header",
+                trusted_proxy_value="token",
+            ),
+        )
+
+    with pytest.raises(ValueError):
+        validate_runtime_auth_values(
+            transport="streamable-http",
+            auth_defaults=_auth_defaults(
+                auth_mode="trusted-proxy-header",
+                trusted_proxy_header="x-envoy-auth",
+                trusted_proxy_value="",
+            ),
+        )
+
+    validate_runtime_auth_values(
+        transport="streamable-http",
+        auth_defaults=_auth_defaults(
+            auth_mode="trusted-proxy-header",
+            trusted_proxy_header="x-envoy-auth",
+            trusted_proxy_value="trusted-shared-value",
+        ),
+    )
+
+
+def test_validate_runtime_auth_values_oauth2_mode() -> None:
+    with pytest.raises(ValueError):
+        validate_runtime_auth_values(
+            transport="streamable-http",
+            auth_defaults=_auth_defaults(auth_mode="oauth2"),
+        )
+
+    with pytest.raises(ValueError):
+        validate_runtime_auth_values(
+            transport="streamable-http",
+            auth_defaults=_auth_defaults(
+                auth_mode="oauth2",
+                oauth2_introspection_url="https://auth.example.com/introspect",
+                oauth2_client_id="client-id",
+            ),
+        )
+
+    with pytest.raises(ValueError):
+        validate_runtime_auth_values(
+            transport="streamable-http",
+            auth_defaults=_auth_defaults(
+                auth_mode="oauth2",
+                oauth2_introspection_url="https://auth.example.com/introspect",
+                oauth2_introspection_timeout_seconds=0.0,
+            ),
+        )
+
+    validate_runtime_auth_values(
+        transport="streamable-http",
+        auth_defaults=_auth_defaults(
+            auth_mode="oauth2",
+            oauth2_introspection_url="https://auth.example.com/introspect",
+            oauth2_client_id="client-id",
+            oauth2_client_secret="client-secret",
+            auth_required_scopes=("gcc.read",),
+        ),
+    )
+
+
+def test_resolve_auth_metadata_urls() -> None:
+    issuer, resource = resolve_auth_metadata_urls(
+        auth_defaults=_auth_defaults(auth_mode="token", auth_token="shared"),
+        host="127.0.0.1",
+        port=8000,
+        streamable_http_path="/mcp",
+    )
+    assert issuer == "http://127.0.0.1:8000/mcp"
+    assert resource == "http://127.0.0.1:8000/mcp"
+
+    issuer, resource = resolve_auth_metadata_urls(
+        auth_defaults=_auth_defaults(
+            auth_mode="oauth2",
+            oauth2_introspection_url="https://auth.example.com/introspect",
+            auth_issuer_url="https://auth.example.com/",
+            auth_resource_server_url="https://gcc.example.com/mcp",
+        ),
+        host="127.0.0.1",
+        port=8000,
+        streamable_http_path="/mcp",
+    )
+    assert issuer == "https://auth.example.com/"
+    assert resource == "https://gcc.example.com/mcp"
+
+
+def test_build_http_base_url_and_csv_parser() -> None:
+    assert build_http_base_url("127.0.0.1", 8000, "/mcp") == "http://127.0.0.1:8000/mcp"
+    assert build_http_base_url("::1", 8000, "mcp") == "http://[::1]:8000/mcp"
+    assert parse_csv_values("a, b,,c") == ("a", "b", "c")

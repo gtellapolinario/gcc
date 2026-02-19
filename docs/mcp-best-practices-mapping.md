@@ -39,3 +39,8 @@ This server implementation follows official MCP guidance from:
 14. Transport readiness:
    - stdio default for local tooling.
    - streamable HTTP mode available behind startup flag.
+15. Remote auth hardening:
+   - Explicit auth mode selection (`off`, `token`, `trusted-proxy-header`, `oauth2`).
+   - Runtime validation of auth mode/transport combinations and required secrets/endpoints.
+16. Deployment boundary controls:
+   - Envoy-oriented reverse-proxy profile documented for remote operation.

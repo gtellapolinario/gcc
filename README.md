@@ -259,16 +259,10 @@ Release automation: `.github/workflows/release.yml`
 - merge PR to `main` with title prefix `release:`
 - workflow creates or updates git tag and GitHub Release from `pyproject.toml` + `CHANGELOG.md`
 
-## Opinionated and Non-standard
+## Transparency
 
-This project is intentionally opinionated:
-
-- stdio-first MCP operation
-- strict profile for remote mode
-- explicit informed decision for tracking `.GCC/` in git
-- signed audit trails as a baseline control for production use
-
-Review and adapt settings to your environment before production rollout.
+This project includes AI-assisted generated code and documentation.
+Generated changes are reviewed, validated, and curated before merge.
 
 ## Feedback and Security
 
@@ -276,3 +270,8 @@ Open an issue for bugs, ideas, and integration feedback:
 <https://github.com/CodeAdminDe/gcc/issues>
 
 For security-relevant findings, prefer responsible disclosure via private channels.
+
+## License
+
+Licensed under the GNU Affero General Public License v3.0 (AGPL-3.0).  
+See `LICENSE`.

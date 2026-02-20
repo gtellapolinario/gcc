@@ -1,0 +1,57 @@
+services:
+  gcc-mcp:
+    image: ghcr.io/codeadminde/gcc:latest
+    container_name: gcc-mcp
+    command:
+      - --transport
+      - streamable-http
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+      - --allow-public-http
+    environment:
+      PYTHONUNBUFFERED: "1"
+      GCC_MCP_SECURITY_PROFILE: strict
+      GCC_MCP_AUTH_MODE: ${GCC_MCP_AUTH_MODE:-token}
+      GCC_MCP_AUTH_TOKEN: ${GCC_MCP_AUTH_TOKEN:?set GCC_MCP_AUTH_TOKEN in environment or .env}
+      GCC_MCP_AUTH_REQUIRED_SCOPES: ${GCC_MCP_AUTH_REQUIRED_SCOPES:-}
+      GCC_MCP_AUDIT_LOG: /var/log/gcc/server-audit.jsonl
+      GCC_MCP_AUDIT_REDACT: "true"
+      GCC_MCP_AUDIT_SIGNING_KEY_FILE: /run/secrets/audit_signing_key
+      GCC_MCP_AUDIT_SIGNING_KEY_ID: ${GCC_MCP_AUDIT_SIGNING_KEY_ID:-prod-2026-q1}
+      GCC_MCP_RATE_LIMIT_PER_MINUTE: ${GCC_MCP_RATE_LIMIT_PER_MINUTE:-120}
+      GCC_MCP_AUDIT_MAX_FIELD_CHARS: ${GCC_MCP_AUDIT_MAX_FIELD_CHARS:-4000}
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - gcc-workspace:/workspace
+      - gcc-logs:/var/log/gcc
+    secrets:
+      - audit_signing_key
+    read_only: true
+    tmpfs:
+      - /tmp
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import socket; s=socket.socket(); s.settimeout(2); s.connect(('127.0.0.1', 8000)); s.close()\"",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  gcc-workspace:
+  gcc-logs:
+
+secrets:
+  audit_signing_key:
+    file: ./secrets/audit-signing.key

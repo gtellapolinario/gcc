@@ -72,6 +72,56 @@ gcc-cli --help
 python -m gcc_mcp --help
 ```
 
+## Container Deployment
+
+Container support is available for local development, production-style runtime, and
+containerized test execution.
+
+Available files:
+
+- `Dockerfile` (multi-stage: `builder`, `runtime`, `test`)
+- `docker-compose.yml` (local/dev runtime)
+- `docker-compose.prod.yml` (strict-profile production baseline)
+- `docker-compose.test.yml` (containerized test stage)
+- `.github/workflows/docker-build-push.yml` (CI build/publish to GHCR)
+
+### Local container quick start
+
+```bash
+mkdir -p workspace
+docker compose up --build -d
+docker compose logs -f
+```
+
+Endpoint:
+
+- `http://127.0.0.1:8000/mcp`
+
+### Production-style compose quick start
+
+```bash
+mkdir -p secrets
+openssl rand -hex 32 > secrets/audit-signing.key
+chmod 600 secrets/audit-signing.key
+
+export GCC_MCP_AUTH_TOKEN='replace-me'
+docker compose -f docker-compose.prod.yml up -d
+```
+
+Notes:
+
+- Production compose runs with `security-profile=strict`.
+- It expects `GCC_MCP_AUTH_TOKEN` and `secrets/audit-signing.key`.
+- Port mapping defaults to loopback only: `127.0.0.1:8000:8000`.
+
+### Containerized test run
+
+```bash
+docker compose -f docker-compose.test.yml build
+docker compose -f docker-compose.test.yml up --abort-on-container-exit
+docker compose -f docker-compose.test.yml down --volumes
+```
+
 ## Quick Start
 
 ### 1. Initialize a project context store
@@ -253,6 +303,7 @@ Continuous integration: `.github/workflows/ci.yml`
 - lint, tests, compile checks
 - security scans (`bandit`, `pip-audit`)
 - packaging checks (`build`, `twine`, wheel smoke)
+- container test/build checks and GHCR image publishing (`docker-build-push.yml`)
 
 Release automation: `.github/workflows/release.yml`
 

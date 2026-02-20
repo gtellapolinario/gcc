@@ -3,3 +3,11 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 *.pyc
+
+# Container/runtime local data
+workspace/
+.GCC/
+secrets/*.key
+.env
+.env.*
+!.env.example

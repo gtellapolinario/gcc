@@ -1,0 +1,9 @@
+services:
+  gcc-test:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: test
+    container_name: gcc-mcp-test
+    environment:
+      PYTHONUNBUFFERED: "1"

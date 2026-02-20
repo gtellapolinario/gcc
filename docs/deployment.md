@@ -92,6 +92,87 @@ Preflight diagnostics:
 - `--check-config` validates effective runtime settings and exits without starting stdio/HTTP transport.
 - `--print-effective-config` prints sanitized effective configuration and exits (secrets are not emitted).
 
+## Container Deployment
+
+Container artifacts are available for development, production-style runtime, and CI test execution:
+
+- `Dockerfile` (multi-stage: `builder`, `runtime`, `test`)
+- `docker-compose.yml` (local/dev)
+- `docker-compose.prod.yml` (strict profile baseline)
+- `docker-compose.test.yml` (containerized tests)
+- `.github/workflows/docker-build-push.yml` (GHCR build/publish pipeline)
+
+### Local development (Docker Compose)
+
+```bash
+mkdir -p workspace
+docker compose up --build -d
+docker compose logs -f
+```
+
+Default container endpoint:
+
+- `http://127.0.0.1:8000/mcp`
+
+The dev compose profile starts `gcc-mcp` with:
+
+- `--transport streamable-http`
+- `--host 0.0.0.0`
+- `--port 8000`
+- `--allow-public-http`
+
+### Production-style Compose Baseline
+
+`docker-compose.prod.yml` uses secure defaults:
+
+- `security-profile=strict`
+- non-root image user
+- read-only filesystem + tmpfs `/tmp`
+- dropped Linux capabilities (`cap_drop: [ALL]`)
+- `no-new-privileges`
+- strict auth + signed audit log requirements
+- loopback-only host mapping (`127.0.0.1:8000:8000`) for proxy-first topology
+
+Required setup:
+
+```bash
+mkdir -p secrets
+openssl rand -hex 32 > secrets/audit-signing.key
+chmod 600 secrets/audit-signing.key
+cp .env.example .env
+export GCC_MCP_AUTH_TOKEN='replace-me'
+docker compose -f docker-compose.prod.yml up -d
+```
+
+Recommended:
+
+- Place Envoy in front for TLS termination and ingress policy.
+- Keep `GCC_MCP_AUTH_TOKEN` and audit signing keys outside git and rotate regularly.
+
+### Containerized Test Stage
+
+```bash
+docker compose -f docker-compose.test.yml build
+docker compose -f docker-compose.test.yml up --abort-on-container-exit
+docker compose -f docker-compose.test.yml down --volumes
+```
+
+The test stage runs:
+
+- `python -m pytest -q`
+- `gcc-cli --help`
+- `gcc-mcp --help`
+
+### GHCR Build/Publish Workflow
+
+Workflow: `.github/workflows/docker-build-push.yml`
+
+Behavior:
+
+- Pull requests: build + run container test target + runtime smoke checks (no push)
+- Push to `main`, `emdai/**`, and version tags: build and publish runtime image to GHCR
+- Multi-arch publish for `linux/amd64` and `linux/arm64`
+
 ## Envoy Reverse-Proxy Profile
 
 Use Envoy for TLS termination, IP allow-listing, and authentication/header controls.

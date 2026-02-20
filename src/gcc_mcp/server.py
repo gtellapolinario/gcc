@@ -128,11 +128,6 @@ def _is_legacy_annotation_type_error(exc: TypeError) -> bool:
 
 def _coerce_annotation_to_runtime_class(annotation: Any) -> type[Any]:
     """Convert complex typing annotations into a runtime class for legacy SDKs."""
-    if isinstance(annotation, type):
-        return annotation
-    if annotation is Any:
-        return object
-
     origin = get_origin(annotation)
     if origin is Annotated:
         args = get_args(annotation)
@@ -148,6 +143,11 @@ def _coerce_annotation_to_runtime_class(annotation: Any) -> type[Any]:
 
     if isinstance(origin, type):
         return origin
+
+    if isinstance(annotation, type):
+        return annotation
+    if annotation is Any:
+        return object
 
     return object
 

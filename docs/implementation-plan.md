@@ -189,3 +189,16 @@ Execution items:
 1. Harden FastMCP constructor compatibility across supported SDK versions.
 2. Add deterministic tests for optional-kwarg fallback and error propagation.
 3. Keep docs/tracking aligned with compatibility policy decisions.
+
+## v1.2 CI SDK Version Matrix Hardening (in progress)
+
+Tracking:
+
+- Milestone: `GCC MCP v1.2 - CI SDK Version Matrix Hardening`
+- Issue: `#28 v1.2 Execution: CI matrix for MCP SDK compatibility`
+
+Execution items:
+
+1. Add MCP SDK version matrix coverage in CI (minimum supported + default/latest resolved).
+2. Preserve existing lint/test/compile gates across matrix entries.
+3. Keep runtime cost controlled with representative SDK-version coverage.

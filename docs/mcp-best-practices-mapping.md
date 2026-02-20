@@ -55,3 +55,5 @@ This server implementation follows official MCP guidance from:
 20. SDK compatibility resilience:
    - FastMCP constructor/tool registration paths include compatibility fallbacks for SDK drift.
    - Regression tests cover optional-parameter fallback behavior.
+21. CI compatibility verification:
+   - CI validates against both default-resolved and minimum-supported MCP SDK versions.

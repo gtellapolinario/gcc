@@ -60,3 +60,96 @@ def test_build_fastmcp_re_raises_unrelated_type_errors(monkeypatch) -> None:
     monkeypatch.setattr(server, "FastMCP", FakeFastMCP)
     with pytest.raises(TypeError, match="boom"):
         server._build_fastmcp()
+
+
+def test_register_tool_coerces_non_class_annotations(monkeypatch) -> None:
+    calls: list[dict[str, object]] = []
+
+    class FakeMCP:
+        def tool(self, annotations: dict[str, bool] | None = None):
+            def decorator(func):
+                call = {
+                    "annotations": annotations,
+                    "parameter_annotation": func.__annotations__["values"],
+                    "return_annotation": func.__annotations__["return"],
+                }
+                calls.append(call)
+                if not all(
+                    isinstance(annotation, type) for annotation in func.__annotations__.values()
+                ):
+                    raise TypeError("issubclass() arg 1 must be a class")
+                return func
+
+            return decorator
+
+    monkeypatch.setattr(server, "mcp", FakeMCP())
+
+    @server._register_tool(server.WRITE_TOOL_ANNOTATIONS)
+    def _sample(values: list[str] | None = None) -> dict[str, object]:
+        return {"values": values}
+
+    assert _sample(values=["a"]) == {"values": ["a"]}
+    assert len(calls) == 2
+    assert calls[0]["annotations"] == server.WRITE_TOOL_ANNOTATIONS
+    assert calls[1]["annotations"] == server.WRITE_TOOL_ANNOTATIONS
+    assert calls[1]["parameter_annotation"] is list
+    assert calls[1]["return_annotation"] is dict
+    assert not isinstance(_sample.__annotations__["values"], type)
+
+
+def test_register_tool_coerces_non_class_annotations_without_tool_annotations(
+    monkeypatch,
+) -> None:
+    calls: list[dict[str, object]] = []
+
+    class FakeMCP:
+        def tool(self, annotations: dict[str, bool] | None = None):
+            def decorator(func):
+                calls.append(
+                    {
+                        "annotations": annotations,
+                        "parameter_annotation": func.__annotations__["values"],
+                    }
+                )
+                if annotations is not None:
+                    raise TypeError("got an unexpected keyword argument 'annotations'")
+                if not all(
+                    isinstance(annotation, type) for annotation in func.__annotations__.values()
+                ):
+                    raise TypeError("issubclass() arg 1 must be a class")
+                return func
+
+            return decorator
+
+    monkeypatch.setattr(server, "mcp", FakeMCP())
+
+    @server._register_tool(server.WRITE_TOOL_ANNOTATIONS)
+    def _sample(values: list[str] | None = None) -> dict[str, object]:
+        return {"values": values}
+
+    assert _sample(values=["a"]) == {"values": ["a"]}
+    assert len(calls) == 3
+    assert calls[0]["annotations"] == server.WRITE_TOOL_ANNOTATIONS
+    assert calls[1]["annotations"] is None
+    assert calls[2]["annotations"] is None
+    assert calls[2]["parameter_annotation"] is list
+
+
+def test_register_tool_re_raises_unrelated_type_errors(monkeypatch) -> None:
+    class FakeMCP:
+        def tool(self, annotations: dict[str, bool] | None = None):
+            _ = annotations
+
+            def decorator(func):
+                _ = func
+                raise TypeError("boom")
+
+            return decorator
+
+    monkeypatch.setattr(server, "mcp", FakeMCP())
+
+    def _sample(values: list[str] | None = None) -> dict[str, object]:
+        return {"values": values}
+
+    with pytest.raises(TypeError, match="boom"):
+        server._register_tool(server.WRITE_TOOL_ANNOTATIONS)(_sample)

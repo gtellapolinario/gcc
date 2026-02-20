@@ -5,9 +5,10 @@ from __future__ import annotations
 import argparse
 import logging
 import sys
+import types
 from datetime import date
 from pathlib import Path
-from typing import Annotated, Any, Callable
+from typing import Annotated, Any, Callable, Union, get_args, get_origin, get_type_hints
 
 from mcp.server.auth.settings import AuthSettings
 from mcp.server.fastmcp import FastMCP
@@ -114,6 +115,82 @@ DESTRUCTIVE_WRITE_TOOL_ANNOTATIONS = {
 }
 
 
+def _is_tool_annotation_kwarg_error(exc: TypeError) -> bool:
+    """Return True when this SDK version does not support tool annotations kwarg."""
+    message = str(exc).lower()
+    return "annotations" in message or "unexpected keyword argument" in message
+
+
+def _is_legacy_annotation_type_error(exc: TypeError) -> bool:
+    """Return True when legacy FastMCP expects class annotations only."""
+    return "issubclass() arg 1 must be a class" in str(exc).lower()
+
+
+def _coerce_annotation_to_runtime_class(annotation: Any) -> type[Any]:
+    """Convert complex typing annotations into a runtime class for legacy SDKs."""
+    if isinstance(annotation, type):
+        return annotation
+    if annotation is Any:
+        return object
+
+    origin = get_origin(annotation)
+    if origin is Annotated:
+        args = get_args(annotation)
+        if args:
+            return _coerce_annotation_to_runtime_class(args[0])
+        return object
+
+    if origin in (Union, types.UnionType):
+        non_none_args = [arg for arg in get_args(annotation) if arg is not type(None)]
+        if len(non_none_args) == 1:
+            return _coerce_annotation_to_runtime_class(non_none_args[0])
+        return object
+
+    if isinstance(origin, type):
+        return origin
+
+    return object
+
+
+def _coerce_function_annotations_for_legacy_fastmcp(
+    func: Callable[..., Any],
+) -> dict[str, type[Any]]:
+    """Resolve and coerce function annotations for legacy FastMCP introspection."""
+    try:
+        resolved = get_type_hints(func, globalns=func.__globals__, include_extras=True)
+    except Exception:  # noqa: BLE001
+        resolved = dict(getattr(func, "__annotations__", {}))
+
+    return {
+        name: _coerce_annotation_to_runtime_class(annotation)
+        for name, annotation in resolved.items()
+    }
+
+
+def _register_tool_with_legacy_annotation_fallback(
+    func: Callable[..., Any],
+    *,
+    annotations: dict[str, bool] | None,
+):
+    """Register a tool after coercing type hints to class-based annotations."""
+    original_annotations = dict(getattr(func, "__annotations__", {}))
+    func.__annotations__ = _coerce_function_annotations_for_legacy_fastmcp(func)
+    try:
+        if annotations is None:
+            return mcp.tool()(func)
+        try:
+            return mcp.tool(annotations=annotations)(func)
+        except TypeError as exc:
+            if _is_tool_annotation_kwarg_error(exc):
+                logger.debug(
+                    "FastMCP tool annotations not supported during legacy annotation fallback."
+                )
+                return mcp.tool()(func)
+            raise
+    finally:
+        func.__annotations__ = original_annotations
+
+
 def _register_tool(annotations: dict[str, bool]):
     """Register tool with annotations, with backwards-compatible fallback."""
 
@@ -121,12 +198,29 @@ def _register_tool(annotations: dict[str, bool]):
         try:
             return mcp.tool(annotations=annotations)(func)
         except TypeError as exc:
-            message = str(exc).lower()
-            if "annotations" in message or "unexpected keyword argument" in message:
+            if _is_legacy_annotation_type_error(exc):
+                logger.debug(
+                    "FastMCP requires class annotations during tool registration; using fallback."
+                )
+                return _register_tool_with_legacy_annotation_fallback(
+                    func, annotations=annotations
+                )
+            if _is_tool_annotation_kwarg_error(exc):
                 logger.debug(
                     "FastMCP tool annotations not supported in this SDK version; using fallback."
                 )
-                return mcp.tool()(func)
+                try:
+                    return mcp.tool()(func)
+                except TypeError as fallback_exc:
+                    if _is_legacy_annotation_type_error(fallback_exc):
+                        logger.debug(
+                            "FastMCP requires class annotations during tool registration; "
+                            "using fallback without tool annotations."
+                        )
+                        return _register_tool_with_legacy_annotation_fallback(
+                            func, annotations=None
+                        )
+                    raise
             raise
 
     return decorator

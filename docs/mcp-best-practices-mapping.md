@@ -63,3 +63,6 @@ This server implementation follows official MCP guidance from:
 23. Startup preflight diagnostics:
    - Runtime configuration can be validated without opening server transport listeners.
    - Sanitized effective-config output supports safe deployment verification.
+24. Automated release hygiene:
+   - Release tagging/publishing is automated in CI from versioned source metadata.
+   - Changelog-backed notes are enforced for published GitHub releases.

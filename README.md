@@ -255,6 +255,12 @@ Checks:
 - `twine check dist/*`
 - wheel-install smoke (`gcc-cli --help`, `gcc-mcp --help`, `python -m gcc_mcp --help`)
 
+Release automation workflow: `.github/workflows/release.yml`
+
+- Auto trigger: merged PRs to `main` with title prefix `release:`
+- Action: creates semver tag from `pyproject.toml` and publishes GitHub Release using `CHANGELOG.md`
+- Manual fallback: `workflow_dispatch` with optional `target_sha` input for backfill releases
+
 Security reference:
 
 - `docs/security-model.md`

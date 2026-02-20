@@ -241,3 +241,16 @@ Delivered items:
 1. Add server preflight mode (`--check-config`) to validate runtime settings and exit.
 2. Add sanitized effective runtime configuration output (`--print-effective-config`).
 3. Add regression tests and deployment docs for startup diagnostics workflows.
+
+## v1.6 Automated Release Pipeline (in progress)
+
+Tracking:
+
+- Milestone: `GCC MCP v1.6 - Automated Release Pipeline`
+- Issue: `#39 ci: automate tag/release for release PRs`
+
+Execution items:
+
+1. Add workflow to auto-publish releases for merged `release:` PRs into `main`.
+2. Use version metadata (`pyproject.toml`) + `CHANGELOG.md` as release source of truth.
+3. Provide workflow-dispatch fallback for backfill releases without manual tag/release commands.

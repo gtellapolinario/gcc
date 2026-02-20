@@ -60,3 +60,6 @@ This server implementation follows official MCP guidance from:
 22. Distribution and release validation:
    - CI builds wheel/sdist artifacts and validates metadata before merge.
    - Fresh-install smoke checks verify CLI and server entrypoints from built artifacts.
+23. Startup preflight diagnostics:
+   - Runtime configuration can be validated without opening server transport listeners.
+   - Sanitized effective-config output supports safe deployment verification.

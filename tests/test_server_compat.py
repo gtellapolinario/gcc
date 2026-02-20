@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 import pytest
 
 pytest.importorskip("mcp")
@@ -170,3 +172,66 @@ def test_coerce_function_annotations_fallback_resolves_string_annotations() -> N
     assert resolved["values"] is list
     assert resolved["return"] is dict
     assert resolved["broken"] is object
+
+
+def test_server_main_check_config_exits_without_running_transport(
+    monkeypatch, capsys
+) -> None:
+    calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
+
+    def _fake_run(*args: object, **kwargs: object) -> None:
+        calls.append((args, kwargs))
+
+    monkeypatch.setattr(server.mcp, "run", _fake_run)
+    monkeypatch.setattr(server.sys, "argv", ["gcc-mcp", "--check-config"])
+
+    server.main()
+
+    captured = capsys.readouterr()
+    assert "Configuration is valid." in captured.out
+    assert calls == []
+
+
+def test_server_main_print_effective_config_redacts_secrets(
+    monkeypatch, capsys
+) -> None:
+    calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
+
+    def _fake_run(*args: object, **kwargs: object) -> None:
+        calls.append((args, kwargs))
+
+    monkeypatch.setattr(server.mcp, "run", _fake_run)
+    monkeypatch.setattr(
+        server.sys,
+        "argv",
+        [
+            "gcc-mcp",
+            "--print-effective-config",
+            "--transport",
+            "streamable-http",
+            "--auth-mode",
+            "token",
+            "--auth-token",
+            "super-secret-token",
+            "--audit-log-file",
+            ".GCC/server-audit.jsonl",
+            "--audit-signing-key",
+            "super-secret-signing-key",
+            "--audit-signing-key-id",
+            "key-2026-q3",
+        ],
+    )
+
+    server.main()
+
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+    assert payload["transport"] == "streamable-http"
+    assert payload["auth"]["mode"] == "token"
+    assert payload["auth"]["token_configured"] is True
+    assert payload["audit_signing"]["enabled"] is True
+    assert payload["audit_signing"]["key_source"] == "value"
+    assert payload["audit_signing"]["key_id"] == "key-2026-q3"
+    assert "super-secret-token" not in captured.out
+    assert "super-secret-signing-key" not in captured.out
+    assert calls == []

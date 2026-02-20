@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import sys
 import types
@@ -870,6 +871,67 @@ def _cli_option_supplied(option_name: str) -> bool:
     )
 
 
+def _effective_runtime_config_payload(
+    *,
+    transport: str,
+    host: str,
+    port: int,
+    allow_public_http: bool,
+    audit_log_file: str,
+    audit_redact_sensitive: bool,
+    rate_limit_per_minute: int,
+    audit_max_field_chars: int,
+    security_profile: str,
+    runtime_auth: RuntimeAuthDefaults,
+    runtime_policy: RuntimeSecurityPolicyDefaults,
+    resolved_audit_signing_key: str,
+) -> dict[str, Any]:
+    """Build sanitized runtime configuration output for preflight diagnostics."""
+    if resolved_audit_signing_key:
+        if runtime_policy.audit_signing_key_file:
+            signing_key_source = "file"
+        elif runtime_policy.audit_signing_key:
+            signing_key_source = "value"
+        else:
+            signing_key_source = "resolved"
+    else:
+        signing_key_source = "none"
+
+    return {
+        "transport": transport,
+        "host": host,
+        "port": port,
+        "allow_public_http": allow_public_http,
+        "audit": {
+            "log_file": audit_log_file or None,
+            "redact_sensitive": audit_redact_sensitive,
+            "max_field_chars": audit_max_field_chars,
+        },
+        "rate_limit_per_minute": rate_limit_per_minute,
+        "security_profile": security_profile,
+        "audit_signing": {
+            "enabled": bool(resolved_audit_signing_key),
+            "key_source": signing_key_source,
+            "key_id": runtime_policy.audit_signing_key_id or None,
+        },
+        "auth": {
+            "mode": runtime_auth.auth_mode,
+            "required_scopes": list(runtime_auth.auth_required_scopes),
+            "token_configured": bool(runtime_auth.auth_token),
+            "trusted_proxy_header": runtime_auth.trusted_proxy_header or None,
+            "trusted_proxy_value_configured": bool(runtime_auth.trusted_proxy_value),
+            "oauth2_introspection_url": runtime_auth.oauth2_introspection_url or None,
+            "oauth2_client_id": runtime_auth.oauth2_client_id or None,
+            "oauth2_client_secret_configured": bool(runtime_auth.oauth2_client_secret),
+            "oauth2_introspection_timeout_seconds": (
+                runtime_auth.oauth2_introspection_timeout_seconds
+            ),
+            "auth_issuer_url": runtime_auth.auth_issuer_url or None,
+            "auth_resource_server_url": runtime_auth.auth_resource_server_url or None,
+        },
+    }
+
+
 def main() -> None:
     """Run GCC MCP server in stdio or streamable HTTP mode."""
     parser = argparse.ArgumentParser(description="GCC MCP server")
@@ -1033,6 +1095,16 @@ def main() -> None:
         default=",".join(auth_defaults.auth_required_scopes),
         help="Comma-separated required OAuth scopes for streamable HTTP auth.",
     )
+    parser.add_argument(
+        "--check-config",
+        action="store_true",
+        help="Validate runtime settings and exit without starting server transport.",
+    )
+    parser.add_argument(
+        "--print-effective-config",
+        action="store_true",
+        help="Print sanitized effective runtime configuration and exit.",
+    )
     args = parser.parse_args()
     runtime_policy = RuntimeSecurityPolicyDefaults(
         security_profile=str(args.security_profile).strip().lower(),
@@ -1104,6 +1176,33 @@ def main() -> None:
         host=args.host,
         port=int(args.port),
     )
+
+    if args.print_effective_config:
+        print(
+            json.dumps(
+                _effective_runtime_config_payload(
+                    transport=str(args.transport),
+                    host=str(args.host),
+                    port=int(args.port),
+                    allow_public_http=bool(args.allow_public_http),
+                    audit_log_file=audit_path,
+                    audit_redact_sensitive=bool(args.audit_redact_sensitive),
+                    rate_limit_per_minute=int(args.rate_limit_per_minute),
+                    audit_max_field_chars=int(args.audit_max_field_chars),
+                    security_profile=runtime_policy.security_profile,
+                    runtime_auth=runtime_auth,
+                    runtime_policy=runtime_policy,
+                    resolved_audit_signing_key=resolved_audit_signing_key,
+                ),
+                indent=2,
+                sort_keys=True,
+            )
+        )
+
+    if args.check_config or args.print_effective_config:
+        if not args.print_effective_config:
+            print("Configuration is valid.")
+        return
 
     if args.transport == "stdio":
         mcp.run()

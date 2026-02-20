@@ -193,6 +193,23 @@ When `security-profile` is `strict` and transport is `streamable-http`, `gcc-mcp
 - audit signing key material must be configured (env var or key file)
 - direct `--audit-signing-key` usage is rejected
 
+Validate runtime settings without starting server transport:
+
+```bash
+gcc-mcp --check-config
+```
+
+Print sanitized effective runtime configuration for deployment diagnostics:
+
+```bash
+gcc-mcp \
+  --transport streamable-http \
+  --auth-mode token \
+  --auth-token 'replace-me' \
+  --audit-log-file .GCC/server-audit.jsonl \
+  --print-effective-config
+```
+
 Optional audit log via CLI flag:
 
 ```bash

@@ -61,4 +61,6 @@ Use this checklist before promoting `gcc-mcp` into a production or production-li
   - MCP tool call smoke flow (`gcc_init` -> `gcc_commit` -> `gcc_status`)
   - auth check for configured auth mode
   - audit log verification sample
-
+- Pre-deploy preflight is executed at least once:
+  - `gcc-mcp --check-config`
+  - `gcc-mcp --print-effective-config` (sanity-check effective settings)

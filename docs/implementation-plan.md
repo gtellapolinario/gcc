@@ -216,15 +216,28 @@ Delivered items:
 2. Added regression coverage for non-class annotation fallback and unrelated TypeError propagation.
 3. Closed delivery via PR #29 merge and reconciled superseded stacked branch/PR state.
 
-## v1.4 Production Readiness and Release Gates (in progress)
+## v1.4 Production Readiness and Release Gates (completed)
 
 Tracking:
 
 - Milestone: `GCC MCP v1.4 - Production Readiness and Release Gates`
 - Issue: `#32 v1.4 Execution: production readiness and release gates`
 
-Execution items:
+Delivered items:
 
 1. Add distribution build/install smoke checks to CI for release gating.
 2. Publish operator-facing production readiness checklist and rollout/rollback guidance.
 3. Keep plan/best-practice mapping aligned with release-quality and delivery state.
+
+## v1.5 Runtime Preflight and Startup Diagnostics (in progress)
+
+Tracking:
+
+- Milestone: `GCC MCP v1.5 - Runtime Preflight and Startup Diagnostics`
+- Issue: `#34 v1.5 Execution: runtime preflight and startup diagnostics`
+
+Execution items:
+
+1. Add server preflight mode (`--check-config`) to validate runtime settings and exit.
+2. Add sanitized effective runtime configuration output (`--print-effective-config`).
+3. Add regression tests and deployment docs for startup diagnostics workflows.

@@ -32,6 +32,8 @@ gcc-mcp --transport streamable-http --auth-mode trusted-proxy-header \
 gcc-mcp --transport streamable-http --auth-mode oauth2 \
   --oauth2-introspection-url https://auth.example.com/oauth2/introspect \
   --oauth2-client-id gcc-mcp --oauth2-client-secret 'replace-me'
+gcc-mcp --check-config
+gcc-mcp --transport streamable-http --auth-mode token --auth-token 'replace-me' --print-effective-config
 ```
 
 ### Environment variables
@@ -84,6 +86,11 @@ Strict profile behavior for `streamable-http`:
 - Configure `audit-log-file`.
 - Provide signing key material via `GCC_MCP_AUDIT_SIGNING_KEY` or `audit-signing-key-file`.
 - Avoid passing `--audit-signing-key` directly on the CLI in strict profile.
+
+Preflight diagnostics:
+
+- `--check-config` validates effective runtime settings and exits without starting stdio/HTTP transport.
+- `--print-effective-config` prints sanitized effective configuration and exits (secrets are not emitted).
 
 ## Envoy Reverse-Proxy Profile
 

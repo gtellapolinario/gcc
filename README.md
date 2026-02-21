@@ -133,6 +133,9 @@ docker compose -f docker-compose.test.yml down --volumes
 
 ## Quick Start
 
+First-time setup with side-by-side `Local (uv)` and `Docker-only` methods:
+`docs/onboarding.md`
+
 ### 1. Initialize a project context store
 
 Secure default (`.GCC/` ignored by git):
@@ -296,6 +299,7 @@ Full configuration and deployment examples: `docs/deployment.md`
 
 ## Documentation Index
 
+- `docs/onboarding.md`
 - `docs/deployment.md`
 - `docs/security-model.md`
 - `docs/audit-verification-runbook.md`

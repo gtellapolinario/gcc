@@ -103,10 +103,7 @@ curl -fsS http://127.0.0.1:8000/mcp >/dev/null || true
 Use plain ASCII quotes in terminal commands.
 
 ```bash
-codex mcp add gcc \
-  --url 'http://127.0.0.1:8000/mcp' \
-  --bearer-token-env-var 'GCC_TOKEN' \
-  --env "GCC_TOKEN=$GCC_TOKEN"
+codex mcp add gcc --url 'http://127.0.0.1:8000/mcp' --bearer-token-env-var 'GCC_TOKEN'
 
 codex mcp list
 codex mcp get gcc

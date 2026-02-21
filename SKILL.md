@@ -1,124 +1,151 @@
 ---
 name: git-context-controller
-description: Use this skill when working on the GCC codebase or operating GCC through MCP/CLI. Covers tool and CLI parity, secure context initialization, schema contracts, runtime hardening, and project workflows.
+description: Use this skill to store, retrieve, and manage persistent AI-agent memory with GCC. Trigger for multi-session tasks, milestone checkpointing, user preference capture (likes/dislikes), coding style guidance, decision logs, branch exploration, and context recovery.
 ---
 
 # Git Context Controller (GCC) Skill
 
-## Overview
+## Purpose
 
-Git Context Controller (GCC) is a Python MCP server and CLI that manages structured agent context in a Git-inspired branch model under `.GCC/`.
+GCC is a structured memory system for AI agents.  
+It organizes context in a Git-inspired hierarchy so important information survives across sessions and handoffs.
 
-Primary entrypoints:
+Primary value:
 
-- `gcc-mcp` (MCP server)
-- `gcc-cli` (CLI parity)
-- `python -m gcc_mcp` (module entrypoint)
+- checkpoint meaningful progress
+- preserve decisions and rationale
+- capture user-specific preferences and working style
+- recover context quickly in later sessions
 
-## Use This Skill When
+## When to Use This Skill
 
-- implementing or reviewing `src/gcc_mcp/*`
-- adding/changing MCP tools and keeping CLI parity
-- operating branch/commit/context flows for long-running tasks
-- hardening remote MCP deployments (`streamable-http`, auth, audit, strict mode)
+Activate this skill whenever memory continuity matters, especially:
 
-## Core Runtime Facts
+- long-running tasks across multiple sessions
+- user says "remember this", "for next time", or similar
+- user expresses stable likes/dislikes or communication preferences
+- coding style, review style, or workflow expectations are clarified
+- branching into alternative approaches and later choosing one
+- handoff preparation between sessions/agents
 
-- default transport: `stdio`
-- remote/testing transport: `streamable-http`
-- security profiles: `baseline` (default), `strict`
-- auth modes (`streamable-http`): `off`, `token`, `trusted-proxy-header`, `oauth2`
+## Memory Model
 
-## Security and Policy Contracts
+GCC stores context under `.GCC/`:
 
-- `.GCC/` is ignored by default (`git_context_policy=ignore`).
-- tracking `.GCC/` requires explicit opt-in:
-  - `git_context_policy=track`
-  - `acknowledge_sensitive_data_risk=true`
-- in `strict` + `streamable-http`:
-  - `auth-mode` must be non-`off`
-  - `audit-log-file` must be configured
-  - audit signing key material must be present
-- prefer env vars or key files for secrets; avoid direct CLI secret flags in shared environments.
+- `main.md`: high-level roadmap, stable direction, durable memory anchors
+- per-branch `commit.md`: milestone summaries
+- per-branch `log.md`: detailed OTA trace (Observation, Thought, Action, Result)
+- `metadata`/config: branch and runtime metadata
 
-## MCP Tool Set
+Think in three levels:
 
-- `gcc_init`
-- `gcc_commit`
-- `gcc_branch`
-- `gcc_merge`
-- `gcc_context`
-- `gcc_status`
-- `gcc_log`
-- `gcc_list`
-- `gcc_checkout`
-- `gcc_delete`
-- `gcc_config_get`
-- `gcc_config_set`
-- `gcc_config_list`
+1. global memory (`main.md`)
+2. milestone memory (`commit.md`)
+3. detailed trace memory (`log.md`)
 
-## CLI Parity Commands
+## Agent Workflow (Standard)
 
-- `init`
-- `commit`
-- `branch`
-- `merge`
-- `context`
-- `status`
-- `log`
-- `list`
-- `checkout`
-- `delete`
-- `config`
-- `audit-verify`
+1. Session start:
+   - run `gcc_status`
+   - run `gcc_context` at `summary` (or `detailed` if needed)
+2. If GCC is missing:
+   - run `gcc_init` for the repo/directory
+   - default policy should remain safe (`ignore`), unless user explicitly chooses tracking
+3. During work:
+   - checkpoint meaningful milestones via `gcc_commit`
+   - capture preference/style updates as dedicated commits
+4. Alternative strategies:
+   - create branches with `gcc_branch`
+   - merge winning path with `gcc_merge`
+5. Session end:
+   - commit a concise summary including next steps / pending risks
 
-## Schema Shape Reminders (Frequent Integration Pitfalls)
+## Preference Capture Standard
 
-- `gcc_commit.details`: `list[str]`
-- `gcc_commit.files_modified`: `list[str]`
-- `gcc_commit.tags`: `list[str]`
-- `gcc_commit.ota_log`: `dict[str, str]` (or omitted)
-- `gcc_branch.tags`: `list[str]`
-- `gcc_context.scope`: `list[str]`
+Store durable user preferences explicitly, not implicitly.
 
-If wrong shapes are provided, GCC returns validation errors with actionable `details.hints`.
+Capture categories:
 
-## Recommended Workflow
+- communication style (verbosity, directness, format)
+- coding style (tests, strictness, naming, patterns)
+- review preferences (severity-first, fix-only-if-needed, risk posture)
+- process preferences (issue/PR linkage, commit discipline, release flow)
+- security posture (hardening expectations, default policies)
 
-1. Initialize repository context:
-   - `gcc-cli init --directory <repo> --name "<project>"`
-2. Create branch for alternative strategy:
-   - `gcc-cli branch <name> --directory <repo> --description "<purpose>"`
-3. Checkpoint milestones:
-   - `gcc-cli commit --directory <repo> --message "<summary>"`
-4. Recover context / status:
-   - `gcc-cli context --directory <repo> --level detailed`
-   - `gcc-cli status --directory <repo>`
-5. Merge completed branch:
-   - `gcc-cli merge <source> --directory <repo> --summary "<merge-summary>"`
+Recommended commit tagging:
 
-## Development and Verification
+- `preferences`
+- `coding-style`
+- `review-style`
+- `workflow`
+- `security`
 
-```bash
-python -m ruff check src tests
-python -m pytest -q
+Use structured `ota_log` for preference commits so retrieval is unambiguous.
+
+Example (MCP payload shape):
+
+```json
+{
+  "directory": "/path/to/repo",
+  "message": "Capture user review and workflow preferences",
+  "commit_type": "docs",
+  "details": [
+    "User prefers verify-first and fix-only-if-needed",
+    "User expects issue/PR/commit linkage discipline"
+  ],
+  "tags": ["preferences", "review-style", "workflow"],
+  "ota_log": {
+    "observation": "User clarified recurring collaboration preferences.",
+    "thought": "These are stable signals and should persist across sessions.",
+    "action": "Recorded as dedicated GCC milestone with tags.",
+    "result": "Future sessions can restore the same collaboration style."
+  }
+}
 ```
 
-Runtime diagnostics:
+## Retrieval Strategy
 
-```bash
-gcc-mcp --check-config
-gcc-mcp --print-effective-config
-```
+Use targeted retrieval to keep context efficient:
 
-## Documentation Map
+- quick restore: `gcc_context(level=summary)`
+- detailed restore: `gcc_context(level=detailed)`
+- preference-focused restore: filter by tags such as `preferences`, `coding-style`, `workflow`
+- recent-only restore: use `since` filter
 
-- installation: `docs/installation.md`
-- first-time onboarding (repo 1, repo 2+): `docs/onboarding.md`
-- deployment and remote hardening: `docs/deployment.md`
-- security model: `docs/security-model.md`
-- production readiness: `docs/production-readiness-checklist.md`
+## Security and Consent Rules
 
-## Notes About Source Alignment
+- `.GCC/` may contain sensitive/security-relevant information.
+- default should keep `.GCC/` out of git.
+- if user wants `.GCC/` tracked, require explicit informed consent.
+- do not store secrets in plain text when avoidable; keep logs useful but safe.
 
-This repository `SKILL.md` is aligned to the historical Notion skill page and updated to match current GCC implementation details and naming.
+## Tool and CLI Parity (Current)
+
+MCP tools:
+
+- `gcc_init`, `gcc_commit`, `gcc_branch`, `gcc_merge`, `gcc_context`, `gcc_status`
+- `gcc_log`, `gcc_list`, `gcc_checkout`, `gcc_delete`
+- `gcc_config_get`, `gcc_config_set`, `gcc_config_list`
+
+CLI commands:
+
+- `init`, `commit`, `branch`, `merge`, `context`, `status`
+- `log`, `list`, `checkout`, `delete`, `config`, `audit-verify`
+
+## Quality Bar
+
+Good GCC memory entries are:
+
+- concise but specific
+- tagged for retrieval
+- decision-oriented (what changed and why)
+- useful for future continuation without re-discovery
+
+Avoid noisy commits for trivial events.
+
+## References
+
+- `docs/onboarding.md`
+- `docs/installation.md`
+- `docs/deployment.md`
+- `docs/security-model.md`

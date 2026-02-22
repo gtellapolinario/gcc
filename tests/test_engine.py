@@ -377,6 +377,85 @@ def test_resolve_directory_applies_path_mapping(tmp_path: Path) -> None:
     assert resolved["directory_resolved"] == str(mapped_repo.resolve())
 
 
+def test_resolve_directory_falls_back_to_existing_mapped_parent(tmp_path: Path) -> None:
+    host_worktrees = tmp_path / "host-worktrees"
+    runtime_repo_root = tmp_path / "runtime-repos" / "projectmist"
+    runtime_repo_root.mkdir(parents=True, exist_ok=True)
+
+    engine = GCCEngine(path_mappings=[(str(host_worktrees), str(runtime_repo_root))])
+
+    resolved = engine.resolve_directory(str(host_worktrees / "five-bears-enter-6pm"))
+    assert resolved["directory_requested"] == str((host_worktrees / "five-bears-enter-6pm").resolve())
+    assert resolved["directory_resolved"] == str(runtime_repo_root.resolve())
+
+
+def test_status_uses_parent_fallback_for_missing_mapped_leaf(tmp_path: Path) -> None:
+    host_worktrees = tmp_path / "host-worktrees"
+    runtime_root = tmp_path / "runtime-repos"
+    runtime_repo_root = runtime_root / "projectmist"
+    runtime_repo_root.mkdir(parents=True, exist_ok=True)
+
+    engine = GCCEngine(
+        path_mappings=[(str(host_worktrees), str(runtime_repo_root))],
+        allowed_roots=[str(runtime_root)],
+    )
+    engine.initialize(
+        InitRequest(
+            directory=str(runtime_repo_root),
+            project_name="Mapped Parent Project",
+        )
+    )
+
+    status = engine.get_status(StatusRequest(directory=str(host_worktrees / "feature-worktree")))
+    assert status.status == "success"
+    assert status.project_name == "Mapped Parent Project"
+
+
+def test_resolve_directory_relative_path_returns_client_cwd_guidance(tmp_path: Path) -> None:
+    allowed_root = tmp_path / "allowed-root"
+    allowed_root.mkdir(parents=True, exist_ok=True)
+    engine = GCCEngine(allowed_roots=[str(allowed_root)])
+
+    with pytest.raises(GCCError) as exc_info:
+        engine.resolve_directory(".")
+
+    assert exc_info.value.code.value == "INVALID_DIRECTORY"
+    assert exc_info.value.details["failure_reason"] == "relative_path_runtime_cwd"
+    assert exc_info.value.details["relative_input"] is True
+    assert isinstance(exc_info.value.details["existing_suggestions"], list)
+    assert exc_info.value.details["directory_requested"] == "."
+    assert exc_info.value.details["directory_resolved"] is None
+    assert "requested_directory" in exc_info.value.details
+    assert "client cwd" in (exc_info.value.suggestion or "").lower()
+
+
+def test_resolve_directory_invalid_error_includes_existing_suggestions(tmp_path: Path) -> None:
+    host_worktrees = tmp_path / "host-worktrees"
+    runtime_repo_root = tmp_path / "runtime-repos" / "projectmist"
+    runtime_repo_root.mkdir(parents=True, exist_ok=True)
+    allowed_root = tmp_path / "allowed-root"
+    allowed_root.mkdir(parents=True, exist_ok=True)
+
+    engine = GCCEngine(
+        path_mappings=[(str(host_worktrees), str(runtime_repo_root))],
+        allowed_roots=[str(allowed_root)],
+    )
+
+    with pytest.raises(GCCError) as exc_info:
+        engine.resolve_directory(str(host_worktrees / "missing-worktree"))
+
+    assert exc_info.value.code.value == "INVALID_DIRECTORY"
+    assert exc_info.value.details["failure_reason"] == "outside_allowed_roots"
+    assert exc_info.value.details["directory_requested"] == str(host_worktrees / "missing-worktree")
+    assert exc_info.value.details["directory_resolved"] is None
+    assert "requested_directory" in exc_info.value.details
+    suggestions = exc_info.value.details["existing_suggestions"]
+    assert suggestions
+    assert suggestions[0]["path"] == str(runtime_repo_root.resolve())
+    confidences = [item["confidence"] for item in suggestions]
+    assert confidences == sorted(confidences, reverse=True)
+
+
 def test_initialize_uses_mapped_runtime_directory(tmp_path: Path) -> None:
     host_root = tmp_path / "host-worktrees"
     runtime_root = tmp_path / "runtime-repos"

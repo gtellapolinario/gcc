@@ -144,6 +144,10 @@ Notes:
 - Keep `GCC_MCP_AUTH_TOKEN` in `.env` or shell environment (never commit secrets).
 - Set `GCC_MCP_PATH_MAP` and `GCC_MCP_ALLOWED_ROOTS` in `.env` when clients send
   host paths but `gcc-mcp` resolves container runtime paths.
+- If a mapped leaf path does not exist, `gcc-mcp` falls back to the nearest
+  existing mapped ancestor within the configured mapping boundary.
+- Relative directory inputs (for example `.`) resolve from the MCP runtime cwd.
+  Use absolute repo paths from the client side when runtime cwd and client cwd differ.
 - Host exposure remains loopback-only by default in production compose.
 - Place a TLS reverse proxy (Envoy/nginx/Traefik) in front for external access.
 

@@ -857,9 +857,18 @@ class GCCEngine:
 
     def _resolve_existing_directory_with_metadata(self, directory: str) -> tuple[Path, Path]:
         """Resolve a directory path, applying optional host/container path mapping."""
-        requested = self._normalize_runtime_path(directory)
-        candidates = self._build_directory_candidates(requested)
+        raw_directory = str(directory).strip() or "."
+        requested = self._normalize_runtime_path(raw_directory)
+        relative_input = self._is_relative_directory_input(raw_directory)
+        candidates, mapped_candidate_present = self._build_directory_candidates(requested)
         blocked_paths: list[Path] = []
+        details: dict[str, Any] = {
+            "directory_requested": str(raw_directory),
+            "directory_resolved": None,
+            "requested_directory": str(requested),
+            "candidate_paths": [str(path) for path in candidates],
+            "existing_suggestions": [],
+        }
 
         for candidate in candidates:
             if not candidate.exists() or not candidate.is_dir():
@@ -867,12 +876,16 @@ class GCCEngine:
             if self._allowed_roots and not self._is_allowed_directory(candidate):
                 blocked_paths.append(candidate)
                 continue
+            details["directory_resolved"] = str(candidate)
             return requested, candidate
 
-        details: dict[str, Any] = {
-            "requested_directory": str(requested),
-            "candidate_paths": [str(path) for path in candidates],
-        }
+        details["existing_suggestions"] = self._build_existing_directory_suggestions(
+            candidates=candidates,
+            blocked_paths=blocked_paths,
+        )
+        if relative_input:
+            details["relative_input"] = True
+            details["runtime_cwd"] = str(Path.cwd().resolve(strict=False))
         if self._path_mappings:
             details["path_mappings"] = [
                 {"from": str(source), "to": str(target)}
@@ -882,6 +895,19 @@ class GCCEngine:
         if blocked_paths:
             details["blocked_paths"] = [str(path) for path in blocked_paths]
             details["allowed_roots"] = [str(root) for root in self._allowed_roots]
+            if relative_input:
+                details["failure_reason"] = "relative_path_runtime_cwd"
+                raise GCCError(
+                    ErrorCode.INVALID_DIRECTORY,
+                    f"Relative directory resolved outside configured allowed roots: {directory}",
+                    (
+                        "Relative directory paths resolve from the MCP runtime cwd. "
+                        "Client cwd is not available; provide an absolute path under "
+                        "GCC_MCP_ALLOWED_ROOTS."
+                    ),
+                    details=details,
+                )
+            details["failure_reason"] = "outside_allowed_roots"
             raise GCCError(
                 ErrorCode.INVALID_DIRECTORY,
                 f"Directory path is outside configured allowed roots: {directory}",
@@ -890,7 +916,25 @@ class GCCEngine:
             )
 
         suggestion = "Provide an existing directory path."
-        if len(candidates) > 1:
+        if relative_input:
+            details["failure_reason"] = "relative_path_runtime_cwd"
+            suggestion = (
+                "Relative directory paths resolve from the MCP runtime cwd. "
+                "Client cwd is not available; provide an absolute path."
+            )
+        elif mapped_candidate_present and details["existing_suggestions"]:
+            details["failure_reason"] = "mapped_leaf_missing"
+            suggestion = (
+                "Retry with the highest-confidence path from details.existing_suggestions "
+                "or create the missing mapped directory."
+            )
+        elif mapped_candidate_present:
+            details["failure_reason"] = "mapped_leaf_missing"
+        else:
+            details["failure_reason"] = "not_found"
+        if len(candidates) > 1 and not relative_input and not (
+            mapped_candidate_present and details["existing_suggestions"]
+        ):
             suggestion = (
                 "Provide an existing directory path or configure GCC_MCP_PATH_MAP to "
                 "translate host paths to runtime paths."
@@ -902,18 +946,68 @@ class GCCEngine:
             details=details,
         )
 
-    def _build_directory_candidates(self, requested: Path) -> list[Path]:
+    def _build_directory_candidates(self, requested: Path) -> tuple[list[Path], bool]:
         """Build candidate directories from direct and mapped path variants."""
         candidates: list[Path] = [requested]
+        mapped_candidate_present = False
         for source_root, target_root in self._path_mappings:
             try:
                 suffix = requested.relative_to(source_root)
             except ValueError:
                 continue
+            mapped_candidate_present = True
             mapped = (target_root / suffix).resolve(strict=False)
             if mapped not in candidates:
                 candidates.append(mapped)
-        return candidates
+            for ancestor in self._iter_bounded_ancestors(path=mapped, boundary_root=target_root):
+                if ancestor not in candidates:
+                    candidates.append(ancestor)
+        return candidates, mapped_candidate_present
+
+    def _iter_bounded_ancestors(self, path: Path, boundary_root: Path) -> list[Path]:
+        """Return parent candidates bounded to a mapping target root."""
+        ancestors: list[Path] = []
+        current = path.parent
+        while True:
+            if current == current.parent:
+                break
+            try:
+                current.relative_to(boundary_root)
+            except ValueError:
+                break
+            ancestors.append(current)
+            if current == boundary_root:
+                break
+            current = current.parent
+        return ancestors
+
+    def _build_existing_directory_suggestions(
+        self,
+        candidates: list[Path],
+        blocked_paths: list[Path],
+    ) -> list[dict[str, Any]]:
+        """Build ranked suggestions for existing candidate paths."""
+        suggestions: list[dict[str, Any]] = []
+        blocked = {str(path) for path in blocked_paths}
+        for index, candidate in enumerate(candidates):
+            if not candidate.exists() or not candidate.is_dir():
+                continue
+            confidence = max(1, 100 - (index * 10))
+            suggestions.append(
+                {
+                    "path": str(candidate),
+                    "confidence": confidence,
+                    "allowed": str(candidate) not in blocked,
+                }
+            )
+        suggestions.sort(
+            key=lambda item: (-int(item["confidence"]), str(item["path"])),
+        )
+        return suggestions
+
+    def _is_relative_directory_input(self, value: str) -> bool:
+        """Return whether a user-provided directory value was relative."""
+        return not Path(value).expanduser().is_absolute()
 
     def _is_allowed_directory(self, path: Path) -> bool:
         """Return whether a path is within configured allowed roots."""

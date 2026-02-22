@@ -78,6 +78,13 @@ export GCC_MCP_PATH_MAP='[
 export GCC_MCP_ALLOWED_ROOTS='/workspace/repos'
 ```
 
+Path resolution behavior:
+
+- If a mapped leaf path does not exist, `gcc-mcp` falls back to the nearest
+  existing ancestor under the mapped target root.
+- Relative paths like `.` resolve from the MCP runtime cwd, not the client cwd.
+  Use absolute repo paths when client/runtime working directories differ.
+
 ```bash
 docker rm -f gcc-mcp >/dev/null 2>&1 || true
 

@@ -375,6 +375,12 @@ export GCC_MCP_PATH_MAP='[
 export GCC_MCP_ALLOWED_ROOTS='/workspace/repos'
 ```
 
+Resolution notes:
+
+- Missing mapped leaf paths fall back to the nearest existing mapped ancestor.
+- Relative inputs (for example `.`) resolve from the MCP runtime cwd. Prefer
+  absolute client-side repo paths when cwd contexts differ.
+
 Full configuration and deployment examples: `docs/deployment.md`
 
 ## Documentation Index

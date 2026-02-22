@@ -98,6 +98,60 @@ def test_server_tool_reports_requested_and_resolved_directory(
     assert response["directory_resolved"] == str(mapped_repo.resolve())
 
 
+def test_server_status_uses_parent_fallback_for_missing_mapped_leaf(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    host_worktrees = tmp_path / "host-worktrees"
+    runtime_root = tmp_path / "runtime-repos"
+    runtime_repo_root = runtime_root / "projectmist"
+    runtime_repo_root.mkdir(parents=True, exist_ok=True)
+
+    monkeypatch.setattr(
+        server,
+        "engine",
+        server.GCCEngine(
+            path_mappings=[(str(host_worktrees), str(runtime_repo_root))],
+            allowed_roots=[str(runtime_root)],
+        ),
+    )
+
+    init_response = server.gcc_init(
+        directory=str(runtime_repo_root),
+        project_name="Mapped Parent Project",
+    )
+    assert init_response["status"] == "success"
+
+    response = server.gcc_status(directory=str(host_worktrees / "five-bears-enter-6pm"))
+    assert response["status"] == "success"
+    assert response["directory_requested"] == str((host_worktrees / "five-bears-enter-6pm").resolve())
+    assert response["directory_resolved"] == str(runtime_repo_root.resolve())
+
+
+def test_server_status_relative_path_returns_client_cwd_guidance(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    allowed_root = tmp_path / "allowed-root"
+    allowed_root.mkdir(parents=True, exist_ok=True)
+
+    monkeypatch.setattr(
+        server,
+        "engine",
+        server.GCCEngine(allowed_roots=[str(allowed_root)]),
+    )
+
+    response = server.gcc_status(directory=".")
+    assert response["status"] == "error"
+    assert response["error_code"] == "INVALID_DIRECTORY"
+    assert response["details"]["failure_reason"] == "relative_path_runtime_cwd"
+    assert response["details"]["directory_requested"] == "."
+    assert response["details"]["directory_resolved"] is None
+    assert "requested_directory" in response["details"]
+    assert isinstance(response["details"]["existing_suggestions"], list)
+    assert "client cwd" in response["suggestion"].lower()
+
+
 def test_server_config_tools(tmp_path: Path) -> None:
     _init_project(tmp_path)
 

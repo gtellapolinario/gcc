@@ -359,6 +359,17 @@ Core environment variables:
 - `GCC_MCP_AUDIT_SIGNING_KEY` or `GCC_MCP_AUDIT_SIGNING_KEY_FILE`
 - `GCC_MCP_RATE_LIMIT_PER_MINUTE`
 - `GCC_MCP_AUDIT_MAX_FIELD_CHARS` (`0` disables truncation)
+- `GCC_MCP_PATH_MAP` (JSON host->runtime path mapping for containerized MCP)
+- `GCC_MCP_ALLOWED_ROOTS` (comma-separated absolute allowlist roots)
+
+Path translation example (agent path differs from MCP runtime path):
+
+```bash
+export GCC_MCP_PATH_MAP='[
+  {"from":"/home/dev/worktrees","to":"/workspace/repos"}
+]'
+export GCC_MCP_ALLOWED_ROOTS='/workspace/repos'
+```
 
 Full configuration and deployment examples: `docs/deployment.md`
 

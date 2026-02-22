@@ -477,3 +477,46 @@ def test_cli_scaffold_skill_uses_init_metadata_when_available(tmp_path: Path, ca
     content = (tmp_path / "SKILL.md").read_text(encoding="utf-8")
     assert "# Memory Project Agent Memory Skill" in content
     assert "Capture durable preferences." in content
+
+
+def test_cli_uses_runtime_path_mapping_from_env(
+    tmp_path: Path,
+    capsys,
+    monkeypatch,
+) -> None:
+    host_root = tmp_path / "host-worktrees"
+    runtime_root = tmp_path / "runtime-repos"
+    mapped_repo = runtime_root / "repo-a"
+    mapped_repo.mkdir(parents=True, exist_ok=True)
+
+    monkeypatch.setenv(
+        "GCC_MCP_PATH_MAP",
+        json.dumps([{"from": str(host_root), "to": str(runtime_root)}]),
+    )
+
+    result = _run_cli_json(
+        [
+            "init",
+            "--directory",
+            str(host_root / "repo-a"),
+            "--name",
+            "Mapped CLI Project",
+        ],
+        capsys,
+    )
+    assert result["exit_code"] == 0
+    assert result["payload"]["status"] == "success"
+    assert (mapped_repo / ".GCC" / "main.md").exists()
+
+
+def test_cli_rejects_invalid_runtime_path_mapping_env(capsys, monkeypatch) -> None:
+    monkeypatch.setenv(
+        "GCC_MCP_PATH_MAP",
+        '[{"from":"relative/source","to":"/runtime/repos"}]',
+    )
+
+    exit_code = main(["status", "--directory", ".", "--json"])
+    assert exit_code == 1
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["status"] == "error"
+    assert payload["error_code"] == "INVALID_INPUT"

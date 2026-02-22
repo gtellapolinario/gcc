@@ -107,6 +107,16 @@ docker run -d \
   --transport streamable-http --host 0.0.0.0 --port 8000
 ```
 
+If your MCP client sends host filesystem paths but `gcc-mcp` resolves paths inside
+the container, add path translation settings:
+
+```bash
+export GCC_MCP_PATH_MAP='[
+  {"from":"/home/dev/worktrees","to":"/workspace/repos"}
+]'
+export GCC_MCP_ALLOWED_ROOTS='/workspace/repos'
+```
+
 ## Method C: Docker Compose Profiles
 
 ## Development Compose

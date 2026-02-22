@@ -113,6 +113,16 @@ codex mcp get gcc
 
 By default, keep `.GCC/` out of git (`git_context_policy=ignore`).
 
+If your MCP client sends host paths but `gcc-mcp` runs in Docker, configure path
+translation once before onboarding repos:
+
+```bash
+export GCC_MCP_PATH_MAP='[
+  {"from":"/home/dev/worktrees","to":"/workspace/repos"}
+]'
+export GCC_MCP_ALLOWED_ROOTS='/workspace/repos'
+```
+
 ### Method A: Local (uv)
 
 ```bash

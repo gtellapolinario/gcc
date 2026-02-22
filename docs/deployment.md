@@ -60,6 +60,8 @@ gcc-mcp --transport streamable-http --auth-mode token --auth-token 'replace-me' 
 - `GCC_MCP_AUTH_REQUIRED_SCOPES` (comma-separated scope list)
 - `GCC_MCP_AUTH_ISSUER_URL` (optional; metadata URL override)
 - `GCC_MCP_AUTH_RESOURCE_SERVER_URL` (optional; metadata URL override)
+- `GCC_MCP_PATH_MAP` (JSON path translation map, useful for host->container path differences)
+- `GCC_MCP_ALLOWED_ROOTS` (comma-separated absolute allowlist roots for resolved directories)
 
 Example:
 
@@ -77,6 +79,8 @@ export GCC_MCP_AUDIT_MAX_FIELD_CHARS=4096
 export GCC_MCP_AUTH_MODE=token
 export GCC_MCP_AUTH_TOKEN='replace-me'
 export GCC_MCP_AUTH_REQUIRED_SCOPES='gcc.read,gcc.write'
+export GCC_MCP_PATH_MAP='[{"from":"/home/dev/worktrees","to":"/workspace/repos"}]'
+export GCC_MCP_ALLOWED_ROOTS='/workspace/repos'
 gcc-mcp
 ```
 

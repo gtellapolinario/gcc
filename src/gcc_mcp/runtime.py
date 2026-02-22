@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ipaddress
+import json
 import math
 import os
 import re
@@ -43,6 +44,14 @@ class RuntimeSecurityPolicyDefaults:
     audit_signing_key: str
     audit_signing_key_file: str
     audit_signing_key_id: str
+
+
+@dataclass(frozen=True)
+class RuntimePathResolutionDefaults:
+    """Directory-resolution defaults for host/container path translation."""
+
+    path_mappings: tuple[tuple[str, str], ...]
+    allowed_roots: tuple[str, ...]
 
 
 def get_runtime_defaults(env: Mapping[str, str] | None = None) -> tuple[str, str, int]:
@@ -105,6 +114,17 @@ def get_runtime_security_policy_defaults(
         audit_signing_key=source.get("GCC_MCP_AUDIT_SIGNING_KEY", "").strip(),
         audit_signing_key_file=source.get("GCC_MCP_AUDIT_SIGNING_KEY_FILE", "").strip(),
         audit_signing_key_id=source.get("GCC_MCP_AUDIT_SIGNING_KEY_ID", "").strip(),
+    )
+
+
+def get_runtime_path_resolution_defaults(
+    env: Mapping[str, str] | None = None,
+) -> RuntimePathResolutionDefaults:
+    """Return directory path-map/allowlist defaults from environment variables."""
+    source = os.environ if env is None else env
+    return RuntimePathResolutionDefaults(
+        path_mappings=_parse_path_map_env(source=source, key="GCC_MCP_PATH_MAP"),
+        allowed_roots=_parse_path_list_env(source=source, key="GCC_MCP_ALLOWED_ROOTS"),
     )
 
 
@@ -408,6 +428,110 @@ def _parse_float_env(
     if min_value is not None and parsed < min_value:
         raise ValueError(f"{key} must be >= {min_value}.")
     return parsed
+
+
+def _parse_path_map_env(source: Mapping[str, str], key: str) -> tuple[tuple[str, str], ...]:
+    raw = source.get(key)
+    if raw is None or not str(raw).strip():
+        return ()
+
+    try:
+        payload = json.loads(str(raw).strip())
+    except json.JSONDecodeError as exc:
+        raise ValueError(
+            f"{key} must be valid JSON (object or list of {{\"from\":..., \"to\":...}} mappings)."
+        ) from exc
+
+    candidate_pairs: list[tuple[str, str]] = []
+    if isinstance(payload, dict):
+        for source_path, target_path in payload.items():
+            if not isinstance(source_path, str) or not isinstance(target_path, str):
+                raise ValueError(f"{key} object mapping entries must use string paths.")
+            candidate_pairs.append((source_path, target_path))
+    elif isinstance(payload, list):
+        for index, item in enumerate(payload):
+            if not isinstance(item, Mapping):
+                raise ValueError(f"{key}[{index}] must be an object with 'from' and 'to' fields.")
+            source_path = item.get("from")
+            target_path = item.get("to")
+            if not isinstance(source_path, str) or not isinstance(target_path, str):
+                raise ValueError(
+                    f"{key}[{index}] must contain string 'from' and 'to' values."
+                )
+            candidate_pairs.append((source_path, target_path))
+    else:
+        raise ValueError(
+            f"{key} must be a JSON object or a list of {{\"from\":..., \"to\":...}} entries."
+        )
+
+    normalized: list[tuple[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for source_path, target_path in candidate_pairs:
+        normalized_source = _normalize_absolute_path_value(
+            value=source_path,
+            key=key,
+            path_label="from",
+        )
+        normalized_target = _normalize_absolute_path_value(
+            value=target_path,
+            key=key,
+            path_label="to",
+        )
+        pair = (normalized_source, normalized_target)
+        if pair in seen:
+            continue
+        seen.add(pair)
+        normalized.append(pair)
+
+    return tuple(normalized)
+
+
+def _parse_path_list_env(source: Mapping[str, str], key: str) -> tuple[str, ...]:
+    raw = source.get(key)
+    if raw is None or not str(raw).strip():
+        return ()
+
+    value = str(raw).strip()
+    parsed_values: list[str]
+    if value.startswith("["):
+        try:
+            payload = json.loads(value)
+        except json.JSONDecodeError as exc:
+            raise ValueError(
+                f"{key} must be a comma-separated list of absolute paths or a JSON list."
+            ) from exc
+        if not isinstance(payload, list):
+            raise ValueError(f"{key} JSON form must be a list of absolute paths.")
+        if not all(isinstance(item, str) for item in payload):
+            raise ValueError(f"{key} JSON list entries must be strings.")
+        parsed_values = [str(item) for item in payload]
+    else:
+        parsed_values = [part for part in value.split(",") if part.strip()]
+
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for item in parsed_values:
+        normalized_item = _normalize_absolute_path_value(
+            value=item,
+            key=key,
+            path_label="entry",
+        )
+        if normalized_item in seen:
+            continue
+        seen.add(normalized_item)
+        normalized.append(normalized_item)
+    return tuple(normalized)
+
+
+def _normalize_absolute_path_value(value: str, key: str, path_label: str) -> str:
+    normalized = str(value).strip()
+    if not normalized:
+        raise ValueError(f"{key} {path_label} path must be non-empty.")
+
+    path = Path(normalized).expanduser()
+    if not path.is_absolute():
+        raise ValueError(f"{key} {path_label} path must be absolute: {normalized}")
+    return str(path.resolve(strict=False))
 
 
 def _validate_http_url(value: str, field_name: str) -> None:

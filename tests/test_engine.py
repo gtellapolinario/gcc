@@ -362,3 +362,49 @@ def test_commit_rejects_tampered_current_branch_value(tmp_path: Path, engine: GC
         )
 
     assert exc_info.value.code.value == "INVALID_BRANCH_NAME"
+
+
+def test_resolve_directory_applies_path_mapping(tmp_path: Path) -> None:
+    host_root = tmp_path / "host-worktrees"
+    runtime_root = tmp_path / "runtime-repos"
+    mapped_repo = runtime_root / "repo-a"
+    mapped_repo.mkdir(parents=True, exist_ok=True)
+
+    engine = GCCEngine(path_mappings=[(str(host_root), str(runtime_root))])
+
+    resolved = engine.resolve_directory(str(host_root / "repo-a"))
+    assert resolved["directory_requested"] == str((host_root / "repo-a").resolve())
+    assert resolved["directory_resolved"] == str(mapped_repo.resolve())
+
+
+def test_initialize_uses_mapped_runtime_directory(tmp_path: Path) -> None:
+    host_root = tmp_path / "host-worktrees"
+    runtime_root = tmp_path / "runtime-repos"
+    mapped_repo = runtime_root / "repo-b"
+    mapped_repo.mkdir(parents=True, exist_ok=True)
+
+    engine = GCCEngine(path_mappings=[(str(host_root), str(runtime_root))])
+    response = engine.initialize(
+        InitRequest(
+            directory=str(host_root / "repo-b"),
+            project_name="Mapped Project",
+        )
+    )
+
+    assert response.status == "success"
+    assert (mapped_repo / ".GCC" / "main.md").exists()
+
+
+def test_resolve_directory_enforces_allowed_roots(tmp_path: Path) -> None:
+    allowed_root = tmp_path / "allowed"
+    disallowed_root = tmp_path / "outside"
+    disallowed_repo = disallowed_root / "repo-x"
+    disallowed_repo.mkdir(parents=True, exist_ok=True)
+
+    engine = GCCEngine(allowed_roots=[str(allowed_root)])
+
+    with pytest.raises(GCCError) as exc_info:
+        engine.resolve_directory(str(disallowed_repo))
+
+    assert exc_info.value.code.value == "INVALID_DIRECTORY"
+    assert "outside configured allowed roots" in exc_info.value.message

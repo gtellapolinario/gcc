@@ -56,9 +56,16 @@ SKILL_TEMPLATE_CHOICES = {"codex", "generic"}
 class GCCEngine:
     """Main service implementing GCC operations."""
 
-    def __init__(self, file_manager: FileManager | None = None) -> None:
+    def __init__(
+        self,
+        file_manager: FileManager | None = None,
+        path_mappings: list[tuple[str, str]] | tuple[tuple[str, str], ...] | None = None,
+        allowed_roots: list[str] | tuple[str, ...] | None = None,
+    ) -> None:
         """Create an engine instance with filesystem operations dependency."""
         self.file_manager = file_manager or FileManager()
+        self._path_mappings = self._normalize_path_mappings(path_mappings or [])
+        self._allowed_roots = self._normalize_allowed_roots(allowed_roots or [])
 
     def initialize(self, request: InitRequest) -> InitResponse:
         """Initialize `.GCC` state for a repository directory."""
@@ -835,16 +842,141 @@ class GCCEngine:
             "overwritten": existed,
         }
 
+    def resolve_directory(self, directory: str) -> dict[str, str]:
+        """Resolve a request directory into the effective runtime path."""
+        requested, resolved = self._resolve_existing_directory_with_metadata(directory)
+        return {
+            "directory_requested": str(requested),
+            "directory_resolved": str(resolved),
+        }
+
     def _resolve_existing_directory(self, directory: str) -> Path:
         """Resolve and validate a repository directory path."""
-        path = Path(directory).expanduser().resolve()
-        if not path.exists() or not path.is_dir():
+        _, resolved = self._resolve_existing_directory_with_metadata(directory)
+        return resolved
+
+    def _resolve_existing_directory_with_metadata(self, directory: str) -> tuple[Path, Path]:
+        """Resolve a directory path, applying optional host/container path mapping."""
+        requested = self._normalize_runtime_path(directory)
+        candidates = self._build_directory_candidates(requested)
+        blocked_paths: list[Path] = []
+
+        for candidate in candidates:
+            if not candidate.exists() or not candidate.is_dir():
+                continue
+            if self._allowed_roots and not self._is_allowed_directory(candidate):
+                blocked_paths.append(candidate)
+                continue
+            return requested, candidate
+
+        details: dict[str, Any] = {
+            "requested_directory": str(requested),
+            "candidate_paths": [str(path) for path in candidates],
+        }
+        if self._path_mappings:
+            details["path_mappings"] = [
+                {"from": str(source), "to": str(target)}
+                for source, target in self._path_mappings
+            ]
+
+        if blocked_paths:
+            details["blocked_paths"] = [str(path) for path in blocked_paths]
+            details["allowed_roots"] = [str(root) for root in self._allowed_roots]
             raise GCCError(
                 ErrorCode.INVALID_DIRECTORY,
-                f"Invalid directory path: {directory}",
-                "Provide an existing directory path.",
+                f"Directory path is outside configured allowed roots: {directory}",
+                "Use a path under GCC_MCP_ALLOWED_ROOTS or adjust the allowlist.",
+                details=details,
             )
-        return path
+
+        suggestion = "Provide an existing directory path."
+        if len(candidates) > 1:
+            suggestion = (
+                "Provide an existing directory path or configure GCC_MCP_PATH_MAP to "
+                "translate host paths to runtime paths."
+            )
+        raise GCCError(
+            ErrorCode.INVALID_DIRECTORY,
+            f"Invalid directory path: {directory}",
+            suggestion,
+            details=details,
+        )
+
+    def _build_directory_candidates(self, requested: Path) -> list[Path]:
+        """Build candidate directories from direct and mapped path variants."""
+        candidates: list[Path] = [requested]
+        for source_root, target_root in self._path_mappings:
+            try:
+                suffix = requested.relative_to(source_root)
+            except ValueError:
+                continue
+            mapped = (target_root / suffix).resolve(strict=False)
+            if mapped not in candidates:
+                candidates.append(mapped)
+        return candidates
+
+    def _is_allowed_directory(self, path: Path) -> bool:
+        """Return whether a path is within configured allowed roots."""
+        for root in self._allowed_roots:
+            try:
+                path.relative_to(root)
+                return True
+            except ValueError:
+                continue
+        return False
+
+    def _normalize_runtime_path(self, value: str) -> Path:
+        """Normalize user-provided runtime paths for stable resolution."""
+        normalized = str(value).strip() or "."
+        return Path(normalized).expanduser().resolve(strict=False)
+
+    def _normalize_path_mappings(
+        self,
+        mappings: list[tuple[str, str]] | tuple[tuple[str, str], ...],
+    ) -> tuple[tuple[Path, Path], ...]:
+        """Normalize and sort path mappings for longest-prefix matching."""
+        normalized: list[tuple[Path, Path]] = []
+        seen: set[tuple[str, str]] = set()
+
+        for source_raw, target_raw in mappings:
+            source = self._normalize_absolute_config_path(source_raw, field_name="path_mappings.from")
+            target = self._normalize_absolute_config_path(target_raw, field_name="path_mappings.to")
+            key = (str(source), str(target))
+            if key in seen:
+                continue
+            seen.add(key)
+            normalized.append((source, target))
+
+        normalized.sort(key=lambda item: len(item[0].parts), reverse=True)
+        return tuple(normalized)
+
+    def _normalize_allowed_roots(
+        self,
+        roots: list[str] | tuple[str, ...],
+    ) -> tuple[Path, ...]:
+        """Normalize allowed root paths with duplicate suppression."""
+        normalized: list[Path] = []
+        seen: set[str] = set()
+        for root_raw in roots:
+            root = self._normalize_absolute_config_path(root_raw, field_name="allowed_roots")
+            key = str(root)
+            if key in seen:
+                continue
+            seen.add(key)
+            normalized.append(root)
+
+        normalized.sort(key=lambda item: len(item.parts), reverse=True)
+        return tuple(normalized)
+
+    def _normalize_absolute_config_path(self, value: str, field_name: str) -> Path:
+        """Normalize absolute configuration path values."""
+        normalized = str(value).strip()
+        if not normalized:
+            raise ValueError(f"{field_name} must be a non-empty absolute path.")
+        path = Path(normalized).expanduser()
+        if not path.is_absolute():
+            raise ValueError(f"{field_name} must be an absolute path: {normalized}")
+        return path.resolve(strict=False)
 
     def _resolve_scaffold_project_metadata(self, directory: Path) -> tuple[str, str]:
         """Load project metadata for SKILL.md scaffolding."""

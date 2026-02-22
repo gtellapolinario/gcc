@@ -35,11 +35,13 @@ from .models import (
 from .runtime import (
     AUTH_MODES,
     RuntimeAuthDefaults,
+    RuntimePathResolutionDefaults,
     RuntimeSecurityPolicyDefaults,
     SECURITY_PROFILES,
     get_runtime_defaults,
     get_runtime_auth_defaults,
     get_runtime_operations_defaults,
+    get_runtime_path_resolution_defaults,
     get_runtime_security_policy_defaults,
     parse_csv_values,
     resolve_audit_signing_key,
@@ -281,6 +283,17 @@ def _run_tool(
     operation: Callable[[], dict[str, Any]],
 ) -> dict[str, Any]:
     """Execute tool operation and emit structured audit event."""
+    enriched_request_payload = dict(request_payload)
+    directory_resolution: dict[str, str] = {}
+    directory = request_payload.get("directory")
+    if isinstance(directory, str):
+        try:
+            directory_resolution = engine.resolve_directory(directory)
+        except GCCError:
+            directory_resolution = {}
+        else:
+            enriched_request_payload.update(directory_resolution)
+
     allowed, retry_after_seconds = rate_limiter.allow()
     if not allowed:
         error_payload = GCCError(
@@ -292,26 +305,34 @@ def _run_tool(
         audit_logger.log_tool_event(
             tool_name=tool_name,
             status="error",
-            request_payload=request_payload,
+            request_payload=enriched_request_payload,
             response_payload=error_payload,
         )
         return error_payload
 
     try:
         response_payload = operation()
+        if (
+            directory_resolution
+            and response_payload.get("status") == "success"
+            and isinstance(response_payload, dict)
+        ):
+            response_payload = {**response_payload, **directory_resolution}
         audit_logger.log_tool_event(
             tool_name=tool_name,
             status="success",
-            request_payload=request_payload,
+            request_payload=enriched_request_payload,
             response_payload=response_payload,
         )
         return response_payload
     except Exception as exc:  # noqa: BLE001
         error_payload = _error_payload_from_exception(exc)
+        if directory_resolution:
+            error_payload = {**error_payload, **directory_resolution}
         audit_logger.log_tool_event(
             tool_name=tool_name,
             status="error",
-            request_payload=request_payload,
+            request_payload=enriched_request_payload,
             response_payload=error_payload,
         )
         return error_payload
@@ -915,6 +936,7 @@ def _effective_runtime_config_payload(
     security_profile: str,
     runtime_auth: RuntimeAuthDefaults,
     runtime_policy: RuntimeSecurityPolicyDefaults,
+    runtime_path_resolution: RuntimePathResolutionDefaults,
     resolved_audit_signing_key: str,
 ) -> dict[str, Any]:
     """Build sanitized runtime configuration output for preflight diagnostics."""
@@ -945,6 +967,13 @@ def _effective_runtime_config_payload(
             "key_source": signing_key_source,
             "key_id": runtime_policy.audit_signing_key_id or None,
         },
+        "path_resolution": {
+            "path_mappings": [
+                {"from": source, "to": target}
+                for source, target in runtime_path_resolution.path_mappings
+            ],
+            "allowed_roots": list(runtime_path_resolution.allowed_roots),
+        },
         "auth": {
             "mode": runtime_auth.auth_mode,
             "required_scopes": list(runtime_auth.auth_required_scopes),
@@ -974,6 +1003,7 @@ def main() -> None:
             audit_redact_default,
         ) = get_runtime_security_defaults()
         security_policy_defaults = get_runtime_security_policy_defaults()
+        path_resolution_defaults = get_runtime_path_resolution_defaults()
         rate_limit_default, audit_max_field_chars_default = get_runtime_operations_defaults()
         auth_defaults = get_runtime_auth_defaults()
     except ValueError as exc:
@@ -1192,7 +1222,12 @@ def main() -> None:
         parser.error(str(exc))
 
     global audit_logger
+    global engine
     global rate_limiter
+    engine = GCCEngine(
+        path_mappings=path_resolution_defaults.path_mappings,
+        allowed_roots=path_resolution_defaults.allowed_roots,
+    )
     audit_path = str(args.audit_log_file).strip()
     audit_logger = AuditLogger(
         log_path=Path(audit_path) if audit_path else None,
@@ -1223,6 +1258,7 @@ def main() -> None:
                     security_profile=runtime_policy.security_profile,
                     runtime_auth=runtime_auth,
                     runtime_policy=runtime_policy,
+                    runtime_path_resolution=path_resolution_defaults,
                     resolved_audit_signing_key=resolved_audit_signing_key,
                 ),
                 indent=2,

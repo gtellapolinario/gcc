@@ -9,6 +9,7 @@ from gcc_mcp.runtime import (
     get_runtime_auth_defaults,
     get_runtime_defaults,
     get_runtime_operations_defaults,
+    get_runtime_path_resolution_defaults,
     get_runtime_security_policy_defaults,
     get_runtime_security_defaults,
     is_loopback_host,
@@ -110,6 +111,36 @@ def test_runtime_security_defaults_and_bool_parsing() -> None:
 def test_runtime_security_defaults_invalid_bool() -> None:
     with pytest.raises(ValueError):
         get_runtime_security_defaults(env={"GCC_MCP_ALLOW_PUBLIC_HTTP": "sometimes"})
+
+
+def test_runtime_path_resolution_defaults_parsing() -> None:
+    defaults = get_runtime_path_resolution_defaults(
+        env={
+            "GCC_MCP_PATH_MAP": (
+                '[{"from":"/opt/agent/worktrees","to":"/workspace/repos"},'
+                '{"from":"/srv/shared","to":"/workspace/shared"}]'
+            ),
+            "GCC_MCP_ALLOWED_ROOTS": "/workspace/repos,/workspace/shared",
+        }
+    )
+    assert defaults.path_mappings == (
+        ("/opt/agent/worktrees", "/workspace/repos"),
+        ("/srv/shared", "/workspace/shared"),
+    )
+    assert defaults.allowed_roots == ("/workspace/repos", "/workspace/shared")
+
+
+def test_runtime_path_resolution_defaults_rejects_relative_paths() -> None:
+    with pytest.raises(ValueError):
+        get_runtime_path_resolution_defaults(
+            env={
+                "GCC_MCP_PATH_MAP": '[{"from":"worktrees","to":"/workspace/repos"}]',
+            }
+        )
+    with pytest.raises(ValueError):
+        get_runtime_path_resolution_defaults(
+            env={"GCC_MCP_ALLOWED_ROOTS": '["workspace/repos"]'}
+        )
 
 
 def test_runtime_operations_defaults_ok() -> None:

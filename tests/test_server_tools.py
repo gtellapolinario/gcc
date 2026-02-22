@@ -71,6 +71,31 @@ def test_server_tool_parity_flow(tmp_path: Path) -> None:
     assert active_only["branches"][0]["name"] == "main"
 
 
+def test_server_tool_reports_requested_and_resolved_directory(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    host_root = tmp_path / "host-worktrees"
+    runtime_root = tmp_path / "runtime-repos"
+    mapped_repo = runtime_root / "repo-a"
+    mapped_repo.mkdir(parents=True, exist_ok=True)
+
+    monkeypatch.setattr(
+        server,
+        "engine",
+        server.GCCEngine(path_mappings=[(str(host_root), str(runtime_root))]),
+    )
+
+    response = server.gcc_init(
+        directory=str(host_root / "repo-a"),
+        project_name="Mapped MCP Project",
+    )
+
+    assert response["status"] == "success"
+    assert response["directory_requested"] == str((host_root / "repo-a").resolve())
+    assert response["directory_resolved"] == str(mapped_repo.resolve())
+
+
 def test_server_config_tools(tmp_path: Path) -> None:
     _init_project(tmp_path)
 

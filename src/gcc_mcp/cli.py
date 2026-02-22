@@ -23,7 +23,7 @@ from .models import (
     MergeRequest,
     StatusRequest,
 )
-from .runtime import resolve_audit_signing_key
+from .runtime import get_runtime_path_resolution_defaults, resolve_audit_signing_key
 from .validation import build_validation_error_details
 
 engine = GCCEngine()
@@ -117,6 +117,8 @@ def _print_payload(payload: dict[str, Any], as_json: bool) -> None:
         "template",
         "path",
         "overwritten",
+        "directory_requested",
+        "directory_resolved",
     ):
         if key in payload and payload[key] not in ("", None):
             print(f"{key}: {payload[key]}")
@@ -364,9 +366,28 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    global engine
     parser = _build_parser()
     args = parser.parse_args(argv)
     as_json = bool(getattr(args, "json", False))
+
+    try:
+        path_defaults = get_runtime_path_resolution_defaults()
+    except ValueError as exc:
+        payload = _error_payload(
+            GCCError(
+                ErrorCode.INVALID_INPUT,
+                str(exc),
+                "Fix path-mapping environment variables and retry.",
+            )
+        )
+        _print_payload(payload, as_json=as_json)
+        return 1
+
+    engine = GCCEngine(
+        path_mappings=path_defaults.path_mappings,
+        allowed_roots=path_defaults.allowed_roots,
+    )
 
     try:
         if args.command == "init":

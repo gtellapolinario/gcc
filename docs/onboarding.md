@@ -68,6 +68,16 @@ gcc-mcp \
 
 ### Method B: Docker-only
 
+If your MCP client sends host filesystem paths while `gcc-mcp` resolves paths
+inside the container, set path translation variables before starting the service:
+
+```bash
+export GCC_MCP_PATH_MAP='[
+  {"from":"/home/dev/worktrees","to":"/workspace/repos"}
+]'
+export GCC_MCP_ALLOWED_ROOTS='/workspace/repos'
+```
+
 ```bash
 docker rm -f gcc-mcp >/dev/null 2>&1 || true
 
@@ -85,6 +95,8 @@ docker run -d \
   -e GCC_MCP_AUDIT_SIGNING_KEY_ID=local-2026-q1 \
   -e GCC_MCP_RATE_LIMIT_PER_MINUTE=120 \
   -e GCC_MCP_AUDIT_MAX_FIELD_CHARS=4000 \
+  -e GCC_MCP_PATH_MAP="${GCC_MCP_PATH_MAP:-}" \
+  -e GCC_MCP_ALLOWED_ROOTS="${GCC_MCP_ALLOWED_ROOTS:-}" \
   -v "$HOME/gcc-repos:/workspace/repos" \
   -v "$HOME/.local/state/gcc-mcp:/var/log/gcc" \
   -v "$HOME/.config/gcc-mcp/audit-signing.key:/run/secrets/audit_signing_key:ro" \
@@ -113,15 +125,8 @@ codex mcp get gcc
 
 By default, keep `.GCC/` out of git (`git_context_policy=ignore`).
 
-If your MCP client sends host paths but `gcc-mcp` runs in Docker, configure path
-translation once before onboarding repos:
-
-```bash
-export GCC_MCP_PATH_MAP='[
-  {"from":"/home/dev/worktrees","to":"/workspace/repos"}
-]'
-export GCC_MCP_ALLOWED_ROOTS='/workspace/repos'
-```
+If you set or change `GCC_MCP_PATH_MAP` / `GCC_MCP_ALLOWED_ROOTS` after container
+startup, restart the `gcc-mcp` container before onboarding repos.
 
 ### Method A: Local (uv)
 

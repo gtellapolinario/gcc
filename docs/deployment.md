@@ -123,6 +123,7 @@ The dev compose profile starts `gcc-mcp` with:
 - `--host 0.0.0.0`
 - `--port 8000`
 - `--allow-public-http`
+- optional passthrough for `GCC_MCP_PATH_MAP` and `GCC_MCP_ALLOWED_ROOTS`
 - named volume mount for `/workspace` (avoids uid/gid mismatch with container user `10001`)
 
 If you intentionally replace the named volume with `./workspace:/workspace`, ensure the host path
@@ -139,6 +140,7 @@ is writable by uid `10001` before startup.
 - `no-new-privileges`
 - strict auth + signed audit log requirements
 - loopback-only host mapping (`127.0.0.1:8000:8000`) for proxy-first topology
+- optional passthrough for `GCC_MCP_PATH_MAP` and `GCC_MCP_ALLOWED_ROOTS`
 
 Required setup:
 

@@ -33,6 +33,8 @@ Use this checklist before promoting `gcc-mcp` into a production or production-li
   - `security-profile=strict`
   - `audit-log-file` is configured
   - audit signing key material is configured (prefer `--audit-signing-key-file` or env var)
+- If containerized MCP receives host-side repo paths, `GCC_MCP_PATH_MAP` and
+  `GCC_MCP_ALLOWED_ROOTS` are configured and validated.
 - Secrets are sourced from files or environment variables, not shell history.
 
 ## 4. Audit and Observability

@@ -87,6 +87,12 @@ openssl rand -hex 32 > "$HOME/.config/gcc-mcp/audit-signing.key"
 chmod 600 "$HOME/.config/gcc-mcp/audit-signing.key"
 export GCC_TOKEN='replace-me'
 
+# Optional: host/client paths -> container runtime paths
+export GCC_MCP_PATH_MAP='[
+  {"from":"/home/dev/worktrees","to":"/workspace/repos"}
+]'
+export GCC_MCP_ALLOWED_ROOTS='/workspace/repos'
+
 docker rm -f gcc-mcp >/dev/null 2>&1 || true
 docker run -d \
   --name gcc-mcp \
@@ -100,21 +106,13 @@ docker run -d \
   -e GCC_MCP_AUDIT_LOG=/var/log/gcc/server-audit.jsonl \
   -e GCC_MCP_AUDIT_SIGNING_KEY_FILE=/run/secrets/audit_signing_key \
   -e GCC_MCP_AUDIT_SIGNING_KEY_ID=local-2026-q1 \
+  -e GCC_MCP_PATH_MAP="${GCC_MCP_PATH_MAP:-}" \
+  -e GCC_MCP_ALLOWED_ROOTS="${GCC_MCP_ALLOWED_ROOTS:-}" \
   -v "$HOME/gcc-repos:/workspace/repos" \
   -v "$HOME/.local/state/gcc-mcp:/var/log/gcc" \
   -v "$HOME/.config/gcc-mcp/audit-signing.key:/run/secrets/audit_signing_key:ro" \
   ghcr.io/codeadminde/gcc:latest \
   --transport streamable-http --host 0.0.0.0 --port 8000
-```
-
-If your MCP client sends host filesystem paths but `gcc-mcp` resolves paths inside
-the container, add path translation settings:
-
-```bash
-export GCC_MCP_PATH_MAP='[
-  {"from":"/home/dev/worktrees","to":"/workspace/repos"}
-]'
-export GCC_MCP_ALLOWED_ROOTS='/workspace/repos'
 ```
 
 ## Method C: Docker Compose Profiles
@@ -144,6 +142,8 @@ docker compose -f docker-compose.prod.yml up -d
 Notes:
 
 - Keep `GCC_MCP_AUTH_TOKEN` in `.env` or shell environment (never commit secrets).
+- Set `GCC_MCP_PATH_MAP` and `GCC_MCP_ALLOWED_ROOTS` in `.env` when clients send
+  host paths but `gcc-mcp` resolves container runtime paths.
 - Host exposure remains loopback-only by default in production compose.
 - Place a TLS reverse proxy (Envoy/nginx/Traefik) in front for external access.
 

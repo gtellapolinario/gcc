@@ -112,6 +112,8 @@ openssl rand -hex 32 > secrets/audit-signing.key
 chmod 600 secrets/audit-signing.key
 cp .env.example .env
 # optional: edit .env for auth mode/scopes and runtime tuning
+# optional: set GCC_MCP_PATH_MAP / GCC_MCP_ALLOWED_ROOTS in .env when
+# MCP clients send host paths and gcc-mcp runs in a container runtime path.
 
 export GCC_MCP_AUTH_TOKEN='replace-me'
 ./scripts/check-container-prereqs.sh
@@ -125,6 +127,8 @@ Notes:
 - Port mapping defaults to loopback only: `127.0.0.1:8000:8000`.
 - `GCC_MCP_ALLOW_PUBLIC_HTTP=true` is set for container-internal `0.0.0.0` binding;
   exposure remains host-loopback and should stay behind a TLS reverse proxy (Envoy/nginx/Traefik).
+- `GCC_MCP_PATH_MAP` / `GCC_MCP_ALLOWED_ROOTS` can be set in `.env` for host->runtime
+  path translation when containerized MCP receives host paths.
 
 ### Containerized test run
 

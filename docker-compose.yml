@@ -17,6 +17,8 @@ services:
     environment:
       PYTHONUNBUFFERED: "1"
       GCC_MCP_AUDIT_REDACT: "true"
+      GCC_MCP_PATH_MAP: ${GCC_MCP_PATH_MAP:-}
+      GCC_MCP_ALLOWED_ROOTS: ${GCC_MCP_ALLOWED_ROOTS:-}
     ports:
       - "127.0.0.1:8000:8000"
     volumes:

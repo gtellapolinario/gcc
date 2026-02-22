@@ -39,6 +39,7 @@ Use stdio mode and point to:
    - `redact_sensitive=true` returns redacted payloads.
 5. Validate error contract:
    - all failures contain `status`, `error_code`, `message`, `suggestion`, `details`.
+   - timeout-classified failures include `error_code=TIMEOUT` and `correlation_id`.
 
 ## Scripted smoke harness
 

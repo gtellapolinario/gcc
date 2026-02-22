@@ -384,6 +384,7 @@ Full configuration and deployment examples: `docs/deployment.md`
 - `docs/deployment.md`
 - `docs/security-model.md`
 - `docs/audit-verification-runbook.md`
+- `docs/timeout-triage-runbook.md`
 - `docs/mcp-inspector-runbook.md`
 - `docs/mcp-best-practices-mapping.md`
 - `docs/production-readiness-checklist.md`

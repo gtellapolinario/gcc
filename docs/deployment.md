@@ -268,3 +268,4 @@ gcc-mcp \
 - Use `redaction_mode=true` where broad context access is exposed.
 - See `docs/security-model.md` for security assumptions and hardening controls.
 - See `docs/audit-verification-runbook.md` for signed audit verification and rotation workflow.
+- See `docs/timeout-triage-runbook.md` for timeout/deadline correlation and phase diagnostics.

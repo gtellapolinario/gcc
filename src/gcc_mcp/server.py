@@ -6,7 +6,9 @@ import argparse
 import json
 import logging
 import sys
+import time
 import types
+import uuid
 from datetime import date
 from pathlib import Path
 from typing import Annotated, Any, Callable, Union, get_args, get_origin, get_type_hints
@@ -277,13 +279,59 @@ def _error_payload_from_exception(exc: Exception) -> dict[str, Any]:
     return payload
 
 
+def _build_correlation_id() -> str:
+    """Generate short operation correlation IDs for diagnostics."""
+    return uuid.uuid4().hex[:12]
+
+
+def _is_timeout_exception(exc: Exception) -> bool:
+    """Return whether an exception represents timeout/deadline exhaustion."""
+    if isinstance(exc, TimeoutError):
+        return True
+    message = str(exc).lower()
+    timeout_markers = (
+        "deadline has elapsed",
+        "deadline exceeded",
+        "timed out",
+        "timeout",
+    )
+    return any(marker in message for marker in timeout_markers)
+
+
+def _log_tool_phase(
+    *,
+    correlation_id: str,
+    tool_name: str,
+    phase: str,
+    status: str,
+    elapsed_seconds: float,
+    details: dict[str, Any] | None = None,
+) -> None:
+    """Emit structured phase-level diagnostics for tool execution."""
+    payload: dict[str, Any] = {
+        "event_type": "mcp_tool_phase",
+        "correlation_id": correlation_id,
+        "tool_name": tool_name,
+        "phase": phase,
+        "status": status,
+        "elapsed_ms": round(elapsed_seconds * 1000, 3),
+    }
+    if details:
+        payload["details"] = details
+    logger.info("mcp_tool_phase %s", json.dumps(payload, ensure_ascii=True, sort_keys=True))
+
+
 def _run_tool(
     tool_name: str,
     request_payload: dict[str, Any],
     operation: Callable[[], dict[str, Any]],
 ) -> dict[str, Any]:
     """Execute tool operation and emit structured audit event."""
+    total_start = time.perf_counter()
+    correlation_id = _build_correlation_id()
+    validation_start = time.perf_counter()
     enriched_request_payload = dict(request_payload)
+    enriched_request_payload["correlation_id"] = correlation_id
     directory_resolution: dict[str, str] = {}
     directory = request_payload.get("directory")
     if isinstance(directory, str):
@@ -295,6 +343,15 @@ def _run_tool(
             enriched_request_payload.update(directory_resolution)
 
     allowed, retry_after_seconds = rate_limiter.allow()
+    validation_elapsed = time.perf_counter() - validation_start
+    _log_tool_phase(
+        correlation_id=correlation_id,
+        tool_name=tool_name,
+        phase="validation",
+        status="ok" if allowed else "rate_limited",
+        elapsed_seconds=validation_elapsed,
+        details={"directory_resolution_applied": bool(directory_resolution)},
+    )
     if not allowed:
         error_payload = GCCError(
             ErrorCode.RATE_LIMITED,
@@ -302,6 +359,15 @@ def _run_tool(
             "Retry later or increase rate-limit-per-minute.",
             {"retry_after_seconds": retry_after_seconds},
         ).to_payload()
+        error_payload["correlation_id"] = correlation_id
+        _log_tool_phase(
+            correlation_id=correlation_id,
+            tool_name=tool_name,
+            phase="total",
+            status="error",
+            elapsed_seconds=time.perf_counter() - total_start,
+            details={"error_code": error_payload.get("error_code")},
+        )
         audit_logger.log_tool_event(
             tool_name=tool_name,
             status="error",
@@ -310,14 +376,42 @@ def _run_tool(
         )
         return error_payload
 
+    operation_start = time.perf_counter()
     try:
         response_payload = operation()
+        operation_elapsed = time.perf_counter() - operation_start
+        _log_tool_phase(
+            correlation_id=correlation_id,
+            tool_name=tool_name,
+            phase="operation_execution",
+            status="ok",
+            elapsed_seconds=operation_elapsed,
+        )
+        serialization_start = time.perf_counter()
+        json.dumps(response_payload, ensure_ascii=True, sort_keys=True)
+        _log_tool_phase(
+            correlation_id=correlation_id,
+            tool_name=tool_name,
+            phase="serialization",
+            status="ok",
+            elapsed_seconds=time.perf_counter() - serialization_start,
+        )
+        if isinstance(response_payload, dict):
+            response_payload = dict(response_payload)
+            response_payload["correlation_id"] = correlation_id
         if (
             directory_resolution
             and response_payload.get("status") == "success"
             and isinstance(response_payload, dict)
         ):
             response_payload = {**response_payload, **directory_resolution}
+        _log_tool_phase(
+            correlation_id=correlation_id,
+            tool_name=tool_name,
+            phase="total",
+            status="ok",
+            elapsed_seconds=time.perf_counter() - total_start,
+        )
         audit_logger.log_tool_event(
             tool_name=tool_name,
             status="success",
@@ -326,9 +420,48 @@ def _run_tool(
         )
         return response_payload
     except Exception as exc:  # noqa: BLE001
-        error_payload = _error_payload_from_exception(exc)
+        operation_elapsed = time.perf_counter() - operation_start
+        timeout_detected = _is_timeout_exception(exc)
+        phase_details = {"exception": exc.__class__.__name__}
+        if timeout_detected:
+            _log_tool_phase(
+                correlation_id=correlation_id,
+                tool_name=tool_name,
+                phase="operation_execution",
+                status="timeout",
+                elapsed_seconds=operation_elapsed,
+                details=phase_details,
+            )
+            error_payload = GCCError(
+                ErrorCode.TIMEOUT,
+                f"Tool '{tool_name}' timed out.",
+                "Retry the request and provide correlation_id for server-side trace lookup.",
+                {
+                    "phase": "operation_execution",
+                    "elapsed_ms": round(operation_elapsed * 1000, 3),
+                },
+            ).to_payload()
+        else:
+            _log_tool_phase(
+                correlation_id=correlation_id,
+                tool_name=tool_name,
+                phase="operation_execution",
+                status="error",
+                elapsed_seconds=operation_elapsed,
+                details=phase_details,
+            )
+            error_payload = _error_payload_from_exception(exc)
+        error_payload["correlation_id"] = correlation_id
         if directory_resolution:
             error_payload = {**error_payload, **directory_resolution}
+        _log_tool_phase(
+            correlation_id=correlation_id,
+            tool_name=tool_name,
+            phase="total",
+            status="error",
+            elapsed_seconds=time.perf_counter() - total_start,
+            details={"error_code": error_payload.get("error_code")},
+        )
         audit_logger.log_tool_event(
             tool_name=tool_name,
             status="error",

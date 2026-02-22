@@ -97,8 +97,11 @@ def _print_payload(payload: dict[str, Any], as_json: bool) -> None:
     if payload.get("status") == "error":
         error_code = payload.get("error_code", "")
         suggestion = payload.get("suggestion", "")
+        correlation_id = payload.get("correlation_id", "")
         if error_code:
             print(f"error_code: {error_code}")
+        if correlation_id:
+            print(f"correlation_id: {correlation_id}")
         if suggestion:
             print(f"suggestion: {suggestion}")
         return
@@ -114,6 +117,7 @@ def _print_payload(payload: dict[str, Any], as_json: bool) -> None:
         "project_name",
         "git_context_policy",
         "security_notice",
+        "correlation_id",
         "template",
         "path",
         "overwritten",

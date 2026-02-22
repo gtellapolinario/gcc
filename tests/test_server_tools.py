@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import logging
 from pathlib import Path
 
 import pytest
@@ -205,3 +207,70 @@ def test_server_documented_payload_examples_pass_unchanged(tmp_path: Path) -> No
     }
     context_response = server.gcc_context(**context_payload)
     assert context_response["status"] == "success"
+
+
+def _phase_logs_from_caplog(caplog) -> list[dict[str, object]]:
+    entries: list[dict[str, object]] = []
+    for record in caplog.records:
+        message = record.getMessage()
+        if not message.startswith("mcp_tool_phase "):
+            continue
+        entries.append(json.loads(message.split(" ", 1)[1]))
+    return entries
+
+
+def test_run_tool_timeout_includes_correlation_id_and_phase_logs(
+    tmp_path: Path, caplog
+) -> None:
+    caplog.set_level(logging.INFO, logger="gcc_mcp.server")
+
+    def _operation() -> dict[str, object]:
+        raise TimeoutError("deadline has elapsed")
+
+    response = server._run_tool(
+        tool_name="gcc_status",
+        request_payload={"directory": str(tmp_path)},
+        operation=_operation,
+    )
+
+    assert response["status"] == "error"
+    assert response["error_code"] == "TIMEOUT"
+    assert response["details"]["phase"] == "operation_execution"
+    correlation_id = response.get("correlation_id")
+    assert isinstance(correlation_id, str) and correlation_id
+
+    phase_logs = _phase_logs_from_caplog(caplog)
+    assert phase_logs
+    assert any(
+        entry.get("phase") == "operation_execution" and entry.get("status") == "timeout"
+        for entry in phase_logs
+    )
+    assert any(
+        entry.get("phase") == "total"
+        and entry.get("status") == "error"
+        and entry.get("correlation_id") == correlation_id
+        for entry in phase_logs
+    )
+
+
+def test_run_tool_logs_validation_operation_and_serialization_phases(
+    tmp_path: Path, caplog
+) -> None:
+    caplog.set_level(logging.INFO, logger="gcc_mcp.server")
+    response = server._run_tool(
+        tool_name="gcc_status",
+        request_payload={"directory": str(tmp_path)},
+        operation=lambda: {"status": "success", "message": "ok"},
+    )
+
+    assert response["status"] == "success"
+    correlation_id = response.get("correlation_id")
+    assert isinstance(correlation_id, str) and correlation_id
+
+    phase_logs = [
+        entry
+        for entry in _phase_logs_from_caplog(caplog)
+        if entry.get("correlation_id") == correlation_id
+    ]
+    phases = {entry.get("phase") for entry in phase_logs}
+    assert {"validation", "operation_execution", "serialization", "total"}.issubset(phases)

@@ -3,6 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      target: runtime
     container_name: gcc-server
     restart: always
     env_file:
@@ -10,6 +11,7 @@ services:
     environment:
       # Essencial para aceitar tráfego do Traefik internamente
       GCC_MCP_ALLOW_PUBLIC_HTTP: 'true'
+    command: ['--transport', 'streamable-http', '--host', '0.0.0.0', '--port', '8000', '--allow-public-http']
     volumes:
       # Chaves de segurança (somente leitura)
       - ./secrets:/app/secrets:ro

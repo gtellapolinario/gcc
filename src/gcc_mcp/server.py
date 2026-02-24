@@ -83,7 +83,9 @@ def _build_fastmcp() -> FastMCP:
             if "unexpected keyword argument" not in message:
                 raise
 
-            removed_key = next((key for key in optional_keys if key in message and key in kwargs), None)
+            removed_key = next(
+                (key for key in optional_keys if key in message and key in kwargs), None
+            )
             if removed_key is None:
                 raise
             kwargs.pop(removed_key, None)
@@ -318,7 +320,9 @@ def _log_tool_phase(
     }
     if details:
         payload["details"] = details
-    logger.info("mcp_tool_phase %s", json.dumps(payload, ensure_ascii=True, sort_keys=True))
+    logger.info(
+        "mcp_tool_phase %s", json.dumps(payload, ensure_ascii=True, sort_keys=True)
+    )
 
 
 def _run_tool(
@@ -483,7 +487,8 @@ def gcc_init(
         str, Field(max_length=500, description="Brief project description")
     ] = "",
     initial_goals: Annotated[
-        list[str] | None, Field(description="Initial goals for the project", max_length=20)
+        list[str] | None,
+        Field(description="Initial goals for the project", max_length=20),
     ] = None,
     git_context_policy: Annotated[
         str,
@@ -533,7 +538,9 @@ def gcc_init(
 @_register_tool(WRITE_TOOL_ANNOTATIONS)
 def gcc_commit(
     directory: Annotated[str, Field(description="Path to GCC-enabled directory")],
-    message: Annotated[str, Field(min_length=1, max_length=200, description="Commit message")],
+    message: Annotated[
+        str, Field(min_length=1, max_length=200, description="Commit message")
+    ],
     commit_type: Annotated[
         str,
         Field(
@@ -559,10 +566,14 @@ def gcc_commit(
         ),
     ] = None,
     tests_passed: Annotated[bool, Field(description="Whether tests passed")] = True,
-    notes: Annotated[str, Field(description="Additional notes for the checkpoint")] = "",
+    notes: Annotated[
+        str, Field(description="Additional notes for the checkpoint")
+    ] = "",
     tags: Annotated[
         list[str] | None,
-        Field(description="Tags for categorization (list[str]). Example: ['mcp', 'docs']."),
+        Field(
+            description="Tags for categorization (list[str]). Example: ['mcp', 'docs']."
+        ),
     ] = None,
     ota_log: Annotated[
         dict[str, str] | None,
@@ -601,7 +612,9 @@ def gcc_commit(
         )
         return engine.commit(request).model_dump(mode="json")
 
-    return _run_tool("gcc_commit", request_payload=request_payload, operation=_operation)
+    return _run_tool(
+        "gcc_commit", request_payload=request_payload, operation=_operation
+    )
 
 
 @_register_tool(WRITE_TOOL_ANNOTATIONS)
@@ -616,9 +629,13 @@ def gcc_branch(
             description="Branch name (lowercase letters, numbers, hyphens)",
         ),
     ],
-    description: Annotated[str, Field(min_length=1, max_length=200, description="Branch purpose")],
+    description: Annotated[
+        str, Field(min_length=1, max_length=200, description="Branch purpose")
+    ],
     from_branch: Annotated[str, Field(description="Parent branch")] = "main",
-    copy_context: Annotated[bool, Field(description="Copy parent branch context")] = True,
+    copy_context: Annotated[
+        bool, Field(description="Copy parent branch context")
+    ] = True,
     tags: Annotated[
         list[str] | None,
         Field(
@@ -650,17 +667,25 @@ def gcc_branch(
         )
         return engine.branch(request).model_dump(mode="json")
 
-    return _run_tool("gcc_branch", request_payload=request_payload, operation=_operation)
+    return _run_tool(
+        "gcc_branch", request_payload=request_payload, operation=_operation
+    )
 
 
 @_register_tool(WRITE_TOOL_ANNOTATIONS)
 def gcc_merge(
     directory: Annotated[str, Field(description="Path to GCC-enabled directory")],
     source_branch: Annotated[str, Field(description="Branch to merge from")],
-    summary: Annotated[str, Field(min_length=1, max_length=500, description="Merge summary")],
+    summary: Annotated[
+        str, Field(min_length=1, max_length=500, description="Merge summary")
+    ],
     target_branch: Annotated[str, Field(description="Branch to merge into")] = "main",
-    keep_branch: Annotated[bool, Field(description="Keep source branch after merge")] = False,
-    update_roadmap: Annotated[bool, Field(description="Update roadmap notes in main.md")] = True,
+    keep_branch: Annotated[
+        bool, Field(description="Keep source branch after merge")
+    ] = False,
+    update_roadmap: Annotated[
+        bool, Field(description="Update roadmap notes in main.md")
+    ] = True,
 ) -> dict[str, Any]:
     """Merge a completed branch into a target branch."""
     request_payload = {
@@ -716,7 +741,9 @@ def gcc_context(
     ] = "markdown",
     redact_sensitive: Annotated[
         bool,
-        Field(description="Apply conservative redaction to potentially sensitive fields."),
+        Field(
+            description="Apply conservative redaction to potentially sensitive fields."
+        ),
     ] = False,
 ) -> dict[str, Any]:
     """Retrieve context snapshots across branches."""
@@ -742,7 +769,9 @@ def gcc_context(
         )
         return engine.get_context(request).model_dump(mode="json")
 
-    return _run_tool("gcc_context", request_payload=request_payload, operation=_operation)
+    return _run_tool(
+        "gcc_context", request_payload=request_payload, operation=_operation
+    )
 
 
 @_register_tool(READ_ONLY_TOOL_ANNOTATIONS)
@@ -756,7 +785,9 @@ def gcc_status(
         request = StatusRequest(directory=directory)
         return engine.get_status(request).model_dump(mode="json")
 
-    return _run_tool("gcc_status", request_payload=request_payload, operation=_operation)
+    return _run_tool(
+        "gcc_status", request_payload=request_payload, operation=_operation
+    )
 
 
 @_register_tool(READ_ONLY_TOOL_ANNOTATIONS)
@@ -773,7 +804,9 @@ def gcc_config_list(
             "config": engine.get_config(directory),
         }
 
-    return _run_tool("gcc_config_list", request_payload=request_payload, operation=_operation)
+    return _run_tool(
+        "gcc_config_list", request_payload=request_payload, operation=_operation
+    )
 
 
 @_register_tool(READ_ONLY_TOOL_ANNOTATIONS)
@@ -793,7 +826,9 @@ def gcc_config_get(
             "value": config.get(key),
         }
 
-    return _run_tool("gcc_config_get", request_payload=request_payload, operation=_operation)
+    return _run_tool(
+        "gcc_config_get", request_payload=request_payload, operation=_operation
+    )
 
 
 @_register_tool(WRITE_TOOL_ANNOTATIONS)
@@ -816,7 +851,9 @@ def gcc_config_set(
             "config": updated,
         }
 
-    return _run_tool("gcc_config_set", request_payload=request_payload, operation=_operation)
+    return _run_tool(
+        "gcc_config_set", request_payload=request_payload, operation=_operation
+    )
 
 
 @_register_tool(READ_ONLY_TOOL_ANNOTATIONS)
@@ -871,7 +908,9 @@ def gcc_log(
     ] = None,
     commit_type: Annotated[
         str | None,
-        Field(description="Optional type filter: feature, bugfix, refactor, test, docs, chore, merge"),
+        Field(
+            description="Optional type filter: feature, bugfix, refactor, test, docs, chore, merge"
+        ),
     ] = None,
     tags: Annotated[
         list[str] | None,
@@ -900,7 +939,15 @@ def gcc_log(
                     "Use YYYY-MM-DD.",
                 ) from exc
 
-        allowed_types = {"feature", "bugfix", "refactor", "test", "docs", "chore", "merge"}
+        allowed_types = {
+            "feature",
+            "bugfix",
+            "refactor",
+            "test",
+            "docs",
+            "chore",
+            "merge",
+        }
         normalized_commit_type = str(commit_type).strip() if commit_type else ""
         if normalized_commit_type and normalized_commit_type not in allowed_types:
             raise GCCError(
@@ -940,7 +987,9 @@ def gcc_checkout(
     def _operation() -> dict[str, Any]:
         return engine.checkout_branch(directory, branch)
 
-    return _run_tool("gcc_checkout", request_payload=request_payload, operation=_operation)
+    return _run_tool(
+        "gcc_checkout", request_payload=request_payload, operation=_operation
+    )
 
 
 @_register_tool(DESTRUCTIVE_WRITE_TOOL_ANNOTATIONS)
@@ -980,10 +1029,14 @@ def gcc_delete(
             archive=archive,
         )
 
-    return _run_tool("gcc_delete", request_payload=request_payload, operation=_operation)
+    return _run_tool(
+        "gcc_delete", request_payload=request_payload, operation=_operation
+    )
 
 
-def _configure_fastmcp_auth(auth_defaults: RuntimeAuthDefaults, host: str, port: int) -> None:
+def _configure_fastmcp_auth(
+    auth_defaults: RuntimeAuthDefaults, host: str, port: int
+) -> None:
     """Apply auth settings to the global FastMCP instance."""
     mcp.settings.host = host
     mcp.settings.port = port
@@ -1025,6 +1078,9 @@ def _configure_fastmcp_auth(auth_defaults: RuntimeAuthDefaults, host: str, port:
         )
 
     setattr(mcp, "_token_verifier", token_verifier)
+
+    if hasattr(mcp.settings, "transport_security"):
+        mcp.settings.transport_security.enable_dns_rebinding_protection = False
 
 
 def _run_streamable_http_with_proxy_header_auth(
@@ -1137,7 +1193,9 @@ def main() -> None:
         ) = get_runtime_security_defaults()
         security_policy_defaults = get_runtime_security_policy_defaults()
         path_resolution_defaults = get_runtime_path_resolution_defaults()
-        rate_limit_default, audit_max_field_chars_default = get_runtime_operations_defaults()
+        rate_limit_default, audit_max_field_chars_default = (
+            get_runtime_operations_defaults()
+        )
         auth_defaults = get_runtime_auth_defaults()
     except ValueError as exc:
         parser.error(str(exc))
@@ -1314,7 +1372,9 @@ def main() -> None:
         oauth2_introspection_url=str(args.oauth2_introspection_url).strip(),
         oauth2_client_id=str(args.oauth2_client_id).strip(),
         oauth2_client_secret=str(args.oauth2_client_secret).strip(),
-        oauth2_introspection_timeout_seconds=float(args.oauth2_introspection_timeout_seconds),
+        oauth2_introspection_timeout_seconds=float(
+            args.oauth2_introspection_timeout_seconds
+        ),
         auth_issuer_url=str(args.auth_issuer_url).strip(),
         auth_resource_server_url=str(args.auth_resource_server_url).strip(),
         auth_required_scopes=parse_csv_values(args.auth_required_scopes),
